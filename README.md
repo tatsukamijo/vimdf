@@ -1,8 +1,34 @@
-# VimDF
+<p align="center">
+  <img src="assets/branding/logo.png" alt="VimDF logo" width="160">
+</p>
 
-A Chrome extension that turns PDF viewing into a Vim-keyboard experience. Scroll, jump, search, outline-navigate, select and highlight — all without leaving the home row.
+<h1 align="center">VimDF: Vim for PDFs</h1>
 
-## Features
+<p align="center">
+  <strong>Vim keybindings for PDF viewing in Chrome</strong><br>
+  Scroll, jump, search, select and highlight — all without leaving the home row.
+</p>
+
+<p align="center">
+  <a href="https://developer.chrome.com/docs/extensions/mv3/intro/">
+    <img src="https://img.shields.io/badge/manifest-v3-4285F4?style=flat-square&logo=googlechrome&logoColor=white">
+  </a>
+  <a href="https://www.typescriptlang.org/">
+    <img src="https://img.shields.io/badge/typescript-5.5-3178c6?style=flat-square&logo=typescript&logoColor=white">
+  </a>
+  <a href="https://mozilla.github.io/pdf.js/">
+    <img src="https://img.shields.io/badge/pdf.js-4.7-red?style=flat-square">
+  </a>
+  <a href="LICENSE">
+    <img src="https://img.shields.io/badge/license-MIT-555?style=flat-square">
+  </a>
+</p>
+
+## 📖 About
+
+VimDF replaces Chrome's built-in PDF viewer with a modal, keyboard-driven one. It renders PDFs with [PDF.js](https://mozilla.github.io/pdf.js/) and wraps them in a Vim-style input layer — so reading a paper, thesis, or spec feels like editing in Vim: motions, marks, jump list, visual selection, hints, and all.
+
+## ✨ Features
 
 - **Vim-style navigation** — `j`/`k`/`h`/`l`, `gg`/`G`/`{n}G`, `Ctrl-d`/`Ctrl-u`/`Ctrl-f`/`Ctrl-b`
 - **Search** — `/` to query, `n`/`N` to cycle matches; `Ctrl-F` for PDF.js native find
@@ -22,7 +48,7 @@ A Chrome extension that turns PDF viewing into a Vim-keyboard experience. Scroll
 
 Press `?` inside the viewer for the full keybinding reference.
 
-## Install
+## 🚀 Installation
 
 ### From source (developer mode)
 
@@ -44,13 +70,13 @@ Then in Chrome:
 
 *Coming soon.*
 
-## Usage
+## 💡 Usage
 
 Once installed, any `.pdf` URL you navigate to — over `http(s)`, extension pages, or `file://` (with file access allowed) — is automatically handled by VimDF. Press `?` to see all keybindings.
 
 Settings live in the extension's Options page (right-click the toolbar icon → Options). Theme, scroll steps, zoom step, page-scroll aliases, link-hint colors, status-bar colors, and per-document last-page persistence are all configurable and sync across Chrome profiles.
 
-## Development
+## 🛠 Development
 
 ```bash
 npm run dev        # Vite dev server with HMR
@@ -77,16 +103,16 @@ src/
     └── continuous-scroll.ts       # rAF-driven smooth scroll for held keys
 ```
 
-## Tech
+## 🔧 Tech
 
 - [PDF.js](https://github.com/mozilla/pdf.js) for rendering
 - [@crxjs/vite-plugin](https://crxjs.dev/vite-plugin/) for MV3 bundling
 - TypeScript, Vite, Chrome Extension Manifest V3
 
-## Author
+## 👤 Author
 
 Tatsuya Kamijo — <tatsukamijo@icloud.com>
 
-## License
+## 📝 License
 
-MIT
+[MIT](LICENSE)
