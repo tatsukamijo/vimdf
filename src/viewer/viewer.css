@@ -1,0 +1,346 @@
+/* Base */
+:root,
+body.theme-dark {
+  --bg: #1e1e1e;
+  --fg: #e0e0e0;
+  --accent: #7aa2f7;
+  --bar-bg: #252525;
+  --bar-fg: #c0c0c0;
+  --page-border: #000;
+  --page-shadow: rgba(0, 0, 0, 0.5);
+  --match-bg: rgba(255, 200, 0, 0.4);
+  --match-selected-bg: rgba(255, 140, 0, 0.75);
+}
+
+body.theme-light {
+  --bg: #f5f5f5;
+  --fg: #1a1a1a;
+  --accent: #0066cc;
+  --bar-bg: #e8e8e8;
+  --bar-fg: #333;
+  --page-border: #bbb;
+  --page-shadow: rgba(0, 0, 0, 0.2);
+  --match-bg: rgba(255, 200, 0, 0.45);
+  --match-selected-bg: rgba(255, 140, 0, 0.75);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  width: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--fg);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 13px;
+}
+
+#viewerContainer {
+  position: absolute;
+  inset: 0 0 24px 0;
+  overflow: auto;
+  outline: none;
+  scroll-behavior: auto; /* we handle smoothness ourselves */
+}
+
+#viewer {
+  position: relative;
+}
+
+/* PDF.js pdfViewer styles — minimal reset; full pdf_viewer.css is imported from JS. */
+.pdfViewer .page {
+  margin: 12px auto;
+  border: 1px solid var(--page-border);
+  background: #fff;
+  box-shadow: 0 4px 14px var(--page-shadow);
+}
+
+/* Status bar */
+#statusbar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  min-height: 24px;
+  background: var(--statusbar-bg, var(--bar-bg));
+  color: var(--statusbar-fg, var(--bar-fg));
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 10px;
+  font-family:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: var(--statusbar-font-size, 12px);
+  user-select: none;
+  border-top: 1px solid #000;
+}
+
+#statusbar span {
+  white-space: nowrap;
+}
+
+#statusCenter {
+  flex: 1;
+  text-align: center;
+  color: var(--accent);
+}
+
+/* Sidebar (outline) */
+#sidebar {
+  position: absolute;
+  top: 0;
+  bottom: 24px;
+  left: 0;
+  width: 280px;
+  background: var(--bar-bg);
+  border-right: 1px solid #000;
+  overflow: auto;
+  z-index: 10;
+}
+
+#sidebar header {
+  padding: 8px 12px;
+  font-weight: 600;
+  color: var(--accent);
+  border-bottom: 1px solid #000;
+  background: #1a1a1a;
+  position: sticky;
+  top: 0;
+}
+
+#outlineTree {
+  padding: 8px 0;
+}
+
+#outlineTree .outline-item {
+  padding: 4px 12px 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#outlineTree .outline-item:hover {
+  background: #333;
+}
+
+#outlineTree .outline-item.outline-focused {
+  background: var(--accent);
+  color: #1a1a1a;
+}
+
+#outlineTree .outline-children {
+  padding-left: 14px;
+}
+
+body.sidebar-open #viewerContainer {
+  left: 280px;
+}
+
+/* Search bar */
+#searchbar {
+  position: absolute;
+  bottom: 24px;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--bar-bg);
+  border-top: 1px solid #000;
+  padding: 4px 10px;
+  font-family:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+  z-index: 20;
+}
+
+#searchbar[hidden] {
+  display: none;
+}
+
+#searchPrompt {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+#searchInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font: inherit;
+}
+
+#searchStatus {
+  color: var(--bar-fg);
+  opacity: 0.8;
+}
+
+/* User highlights (saved via visual-mode H) */
+.user-hl-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 3;
+}
+
+.user-hl {
+  position: absolute;
+  pointer-events: auto;
+  mix-blend-mode: multiply;
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+/* Vim caret + visual selection overlays */
+.vim-caret {
+  background: rgba(100, 180, 255, 0.25);
+  outline: 1.5px solid rgba(100, 180, 255, 0.9);
+  pointer-events: none;
+  z-index: 5;
+  border-radius: 2px;
+  animation: vim-caret-blink 1.1s ease-in-out infinite;
+}
+
+@keyframes vim-caret-blink {
+  0%, 45% { opacity: 1; }
+  55%, 100% { opacity: 0.25; }
+}
+
+.vim-selection {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+}
+
+.vim-selection-box {
+  background: rgba(100, 180, 255, 0.35);
+  mix-blend-mode: multiply;
+  border-radius: 2px;
+}
+
+#modeIndicator {
+  color: var(--accent);
+  font-weight: bold;
+  letter-spacing: 0.08em;
+  margin-left: 16px;
+}
+
+#modeIndicator:empty {
+  display: none;
+}
+
+/* Find highlight overrides (PDF.js uses these classes) */
+.textLayer .highlight {
+  background: var(--match-bg);
+  border-radius: 2px;
+}
+
+.textLayer .highlight.selected {
+  background: var(--match-selected-bg);
+}
+
+/* Link hints */
+#hintLayer {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 25;
+}
+
+#hintLayer .hint {
+  position: fixed;
+  background: var(--hint-bg, rgba(50, 50, 50, 0.95));
+  color: var(--hint-fg, #f5f5f5);
+  border: none;
+  border-radius: 6px;
+  padding: 2px 6px;
+  font-family: "SF Pro Text", system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.5px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.3);
+  text-transform: lowercase;
+  pointer-events: none;
+  /* Lift the hint slightly above its anchor so the label doesn't cover the first characters. */
+  transform: translate(-3px, -55%);
+}
+
+#hintLayer .hint .matched {
+  color: var(--hint-matched-fg, #f97316);
+}
+
+/* Help overlay */
+#help {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 30;
+}
+
+/* Ensure the hidden attribute wins over the id selector above. */
+#help[hidden] {
+  display: none;
+}
+
+#help .help-inner {
+  background: #222;
+  padding: 24px 32px;
+  border-radius: 6px;
+  border: 1px solid #333;
+  max-height: 80vh;
+  overflow: auto;
+  min-width: 500px;
+}
+
+#help h2 {
+  margin-top: 0;
+  color: var(--accent);
+}
+
+#help table {
+  border-collapse: collapse;
+  width: 100%;
+}
+
+#help td,
+#help th {
+  padding: 4px 12px;
+  text-align: left;
+}
+
+#help th {
+  color: var(--accent);
+  border-bottom: 1px solid #333;
+  padding-top: 14px;
+}
+
+#help td:first-child {
+  font-family:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color: #ffc66d;
+  white-space: nowrap;
+  width: 180px;
+}
+
+#help .hint {
+  opacity: 0.7;
+  margin-bottom: 0;
+  margin-top: 16px;
+  font-size: 12px;
+}
+

@@ -1,0 +1,24 @@
+{
+  "name": "vimdf",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Navigate PDFs with Vim keybindings",
+  "author": "Tatsuya Kamijo <tatsukamijo@icloud.com>",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc --noEmit && vite build",
+    "typecheck": "tsc --noEmit",
+    "preview": "vite preview"
+  },
+  "devDependencies": {
+    "@crxjs/vite-plugin": "^2.4.0",
+    "@types/chrome": "^0.0.270",
+    "typescript": "^5.5.4",
+    "vite": "^5.4.8",
+    "vite-plugin-static-copy": "^3.4.0"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^4.7.76"
+  }
+}

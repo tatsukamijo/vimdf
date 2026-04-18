@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>VimDF</title>
+    <link rel="stylesheet" href="./viewer.css" />
+  </head>
+  <body>
+    <div id="viewerContainer" tabindex="0">
+      <div id="viewer" class="pdfViewer"></div>
+    </div>
+
+    <aside id="sidebar" hidden>
+      <header>Outline</header>
+      <div id="outlineTree"></div>
+    </aside>
+
+    <footer id="statusbar">
+      <span id="statusLeft"></span>
+      <span id="modeIndicator"></span>
+      <span id="statusCenter"></span>
+      <span id="statusRight"></span>
+    </footer>
+
+    <div id="searchbar" hidden>
+      <span id="searchPrompt">/</span>
+      <input
+        type="text"
+        id="searchInput"
+        autocomplete="off"
+        spellcheck="false"
+      />
+      <span id="searchStatus"></span>
+    </div>
+
+    <div id="help" hidden>
+      <div class="help-inner">
+        <h2>VimDF — Keybindings</h2>
+        <table>
+          <tr><th colspan="2">Navigation</th></tr>
+          <tr><td>j / k</td><td>Scroll down / up</td></tr>
+          <tr><td>h / l</td><td>Scroll left / right</td></tr>
+          <tr><td>Ctrl-d / Ctrl-u</td><td>Half page down / up</td></tr>
+          <tr><td>Ctrl-f / Ctrl-b</td><td>Full page down / up</td></tr>
+          <tr><td>gg / G</td><td>First / last page</td></tr>
+          <tr><td>{n}G</td><td>Go to page n</td></tr>
+
+          <tr><th colspan="2">Search</th></tr>
+          <tr><td>/</td><td>Search</td></tr>
+          <tr><td>n / N</td><td>Next / previous match</td></tr>
+          <tr><td>Ctrl-F</td><td>Native find</td></tr>
+          <tr><td>Esc</td><td>Close search</td></tr>
+
+          <tr><th colspan="2">Marks</th></tr>
+          <tr><td>m{a-z}</td><td>Set mark</td></tr>
+          <tr><td>'{a-z}</td><td>Jump to mark</td></tr>
+
+          <tr><th colspan="2">Link hints</th></tr>
+          <tr><td>f</td><td>Follow link (show hints)</td></tr>
+          <tr><td>F</td><td>Follow link in new tab</td></tr>
+          <tr><td>Ctrl-O</td><td>Jump back</td></tr>
+          <tr><td>Ctrl-I / Tab</td><td>Jump forward</td></tr>
+
+          <tr><th colspan="2">View</th></tr>
+          <tr><td>+ / = / -</td><td>Zoom in / out</td></tr>
+          <tr><td>0</td><td>Fit width</td></tr>
+          <tr><td>o</td><td>Toggle outline (auto-focuses first item)</td></tr>
+          <tr><td>j/k, Enter (in outline)</td><td>Move selection, jump to section</td></tr>
+          <tr><td>Esc / Ctrl-h (in outline)</td><td>Release outline focus (sidebar stays open)</td></tr>
+          <tr><td>?</td><td>Toggle this help</td></tr>
+
+          <tr><th colspan="2">Caret mode</th></tr>
+          <tr><td>i</td><td>Enter INSERT (caret on text)</td></tr>
+          <tr><td>h / l</td><td>Prev / next character</td></tr>
+          <tr><td>w / b</td><td>Next / prev word start</td></tr>
+          <tr><td>e</td><td>Next word end</td></tr>
+          <tr><td>j / k</td><td>Next / prev line (column-aware)</td></tr>
+          <tr><td>Ctrl-l / Ctrl-h</td><td>Jump right / left column</td></tr>
+          <tr><td>0 / $</td><td>Line start / end</td></tr>
+          <tr><td>gg / G</td><td>First / last page (caret)</td></tr>
+          <tr><td>{n}G</td><td>Go to page n (caret)</td></tr>
+          <tr><td>zz / zt / zb</td><td>Scroll caret to center / top / bottom</td></tr>
+          <tr><td>Ctrl-O / Ctrl-I / Tab</td><td>Jump back / forward (insert)</td></tr>
+          <tr><td>v</td><td>Toggle VISUAL (char-wise)</td></tr>
+          <tr><td>V</td><td>Toggle VISUAL LINE</td></tr>
+          <tr><td>Ctrl-V / Ctrl-Q</td><td>Toggle VISUAL BLOCK</td></tr>
+          <tr><td>y</td><td>Yank selection to clipboard</td></tr>
+          <tr><td>H</td><td>Save selection as highlight</td></tr>
+          <tr><td>Esc</td><td>Back to normal</td></tr>
+          <tr><td>right-click</td><td>Remove a highlight</td></tr>
+        </table>
+        <p class="hint">Press ? or Esc to close.</p>
+      </div>
+    </div>
+
+    <script type="module" src="./viewer.ts"></script>
+  </body>
+</html>

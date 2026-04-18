@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>VimDF — Options</title>
+    <link rel="stylesheet" href="./options.css" />
+  </head>
+  <body>
+    <main>
+      <h1>VimDF</h1>
+      <p class="sub">Settings are synced across Chrome profiles.</p>
+
+      <section>
+        <h2>Appearance</h2>
+        <label class="row">
+          <span>Theme</span>
+          <select id="theme">
+            <option value="auto">Auto (follow system)</option>
+            <option value="dark">Dark</option>
+            <option value="light">Light</option>
+          </select>
+        </label>
+      </section>
+
+      <section>
+        <h2>Navigation</h2>
+        <label class="row">
+          <span>
+            Vertical scroll step
+            <small>pixels per <code>j</code> / <code>k</code></small>
+          </span>
+          <input
+            type="number"
+            id="scrollStep"
+            min="10"
+            max="500"
+            step="5"
+          />
+        </label>
+        <label class="row">
+          <span>
+            Horizontal scroll step
+            <small>pixels per <code>h</code> / <code>l</code></small>
+          </span>
+          <input
+            type="number"
+            id="hScrollStep"
+            min="10"
+            max="500"
+            step="5"
+          />
+        </label>
+        <label class="row">
+          <span>
+            Zoom step
+            <small>multiplier per <code>+</code> / <code>-</code>, e.g. 1.1</small>
+          </span>
+          <input
+            type="number"
+            id="zoomStep"
+            min="1.01"
+            max="2"
+            step="0.01"
+          />
+        </label>
+      </section>
+
+      <section>
+        <h2>Page scroll aliases</h2>
+        <p class="hint" style="margin-top: 0">
+          Bind an extra key (with or without modifiers) to each page-scroll
+          command. Focus a field and press the combo you want, or press
+          <code>Backspace</code> to clear.
+          <code>Ctrl-d</code> / <code>Ctrl-u</code> /
+          <code>Ctrl-f</code> / <code>Ctrl-b</code> always remain active.
+          Note: <code>f</code> is used by link hints, so avoid plain
+          <code>f</code> for full-page down.
+        </p>
+        <label class="row">
+          <span>
+            Half page down
+            <small>default: <code>d</code> (Ctrl-d also works)</small>
+          </span>
+          <input type="text" class="keycap" id="halfPageDownKey" readonly />
+        </label>
+        <label class="row">
+          <span>
+            Half page up
+            <small>default: <code>u</code> (Ctrl-u also works)</small>
+          </span>
+          <input type="text" class="keycap" id="halfPageUpKey" readonly />
+        </label>
+        <label class="row">
+          <span>
+            Full page down
+            <small>default: none (Ctrl-f)</small>
+          </span>
+          <input type="text" class="keycap" id="fullPageDownKey" readonly />
+        </label>
+        <label class="row">
+          <span>
+            Full page up
+            <small>default: none (Ctrl-b)</small>
+          </span>
+          <input type="text" class="keycap" id="fullPageUpKey" readonly />
+        </label>
+      </section>
+
+      <section>
+        <h2>Link hints</h2>
+        <p class="hint" style="margin-top: 0">
+          Colors for the yellow hint labels shown when pressing <code>f</code>.
+          Click <b>Reset</b> to restore the built-in color.
+        </p>
+        <label class="row">
+          <span>Hint background</span>
+          <div class="color-field">
+            <input type="color" id="hintBg" />
+            <input type="text" class="hex" data-target="hintBg" spellcheck="false" placeholder="#323232" />
+            <button type="button" class="clear" data-target="hintBg">Reset</button>
+          </div>
+        </label>
+        <label class="row">
+          <span>Hint text</span>
+          <div class="color-field">
+            <input type="color" id="hintFg" />
+            <input type="text" class="hex" data-target="hintFg" spellcheck="false" placeholder="#f5f5f5" />
+            <button type="button" class="clear" data-target="hintFg">Reset</button>
+          </div>
+        </label>
+        <label class="row">
+          <span>
+            Matched character
+            <small>color of already-typed hint chars</small>
+          </span>
+          <div class="color-field">
+            <input type="color" id="hintMatchedFg" />
+            <input type="text" class="hex" data-target="hintMatchedFg" spellcheck="false" placeholder="#f97316" />
+            <button type="button" class="clear" data-target="hintMatchedFg">Reset</button>
+          </div>
+        </label>
+      </section>
+
+      <section>
+        <h2>Status bar</h2>
+        <p class="hint" style="margin-top: 0">
+          Colors fall back to the current theme when unset.
+        </p>
+        <label class="row">
+          <span>Background</span>
+          <div class="color-field">
+            <input type="color" id="statusBarBg" />
+            <input type="text" class="hex" data-target="statusBarBg" spellcheck="false" placeholder="#252525" />
+            <button type="button" class="clear" data-target="statusBarBg">Reset</button>
+          </div>
+        </label>
+        <label class="row">
+          <span>Text</span>
+          <div class="color-field">
+            <input type="color" id="statusBarFg" />
+            <input type="text" class="hex" data-target="statusBarFg" spellcheck="false" placeholder="#c0c0c0" />
+            <button type="button" class="clear" data-target="statusBarFg">Reset</button>
+          </div>
+        </label>
+        <label class="row">
+          <span>Font size <small>pixels</small></span>
+          <input
+            type="number"
+            id="statusBarFontSize"
+            min="9"
+            max="24"
+            step="1"
+          />
+        </label>
+      </section>
+
+      <section>
+        <h2>State persistence</h2>
+        <label class="row checkbox">
+          <input type="checkbox" id="rememberLastPage" />
+          <span>Remember last-viewed page per document</span>
+        </label>
+      </section>
+
+      <section class="actions">
+        <span id="status" aria-live="polite"></span>
+        <button id="reset" type="button">Reset to defaults</button>
+      </section>
+
+      <section>
+        <h2>Local file access</h2>
+        <p class="hint">
+          To open <code>file://</code> PDFs automatically, visit
+          <code>chrome://extensions</code>, find <b>VimDF</b>, and
+          enable <b>Allow access to file URLs</b>.
+        </p>
+      </section>
+
+      <section>
+        <h2>Keybindings</h2>
+        <p class="hint">
+          Press <code>?</code> inside the viewer to see the full list.
+          Custom keymap editing is coming in a future version.
+        </p>
+      </section>
+    </main>
+
+    <script type="module" src="./options.ts"></script>
+  </body>
+</html>

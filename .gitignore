@@ -1,0 +1,21 @@
+# deps
+node_modules
+
+# build output
+dist
+*.tsbuildinfo
+
+# packaging
+*.zip
+
+# caches
+.vite
+coverage
+
+# env
+.env
+.env.*
+
+# os / editor
+.DS_Store
+*.log
