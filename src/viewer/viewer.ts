@@ -29,6 +29,8 @@ import {
   type Settings,
 } from "../common/settings";
 import { checkAndShowConflictWarning } from "./conflict-notification";
+import { downloadPdf, printPdf, suggestedFilename } from "./print";
+import { showSaveDialog } from "./save-dialog";
 
 GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.mjs",
@@ -52,6 +54,10 @@ export class Viewer {
 
   private highlightStore: HighlightStore | null = null;
   private userHighlights: Highlight[] = [];
+
+  get highlights(): ReadonlyArray<Highlight> {
+    return this.userHighlights;
+  }
 
   /**
    * Last destination passed to PDF.js's scrollPageIntoView. Captured so that
@@ -143,12 +149,18 @@ export class Viewer {
     });
 
     this.eventBus.on("updatefindmatchescount", (e: { matchesCount: { current: number; total: number } }) => {
+      // PDFFindController flushes count updates on a promise chain after
+      // `findbarclose`, so events arrive *after* we've cleared the status
+      // bar on Esc. Gate behind `findStatusEnabled` so post-close emits
+      // don't stomp the cleared bar.
+      if (!this.findStatusEnabled) return;
       const { current, total } = e.matchesCount;
       if (total > 0) {
         this.setStatusCenter(`${current} / ${total}`);
       }
     });
     this.eventBus.on("updatefindcontrolstate", (e: { state: number; matchesCount?: { current: number; total: number } }) => {
+      if (!this.findStatusEnabled) return;
       // state 0=found, 1=notfound, 2=wrapped, 3=pending
       if (e.state === 1) this.setStatusCenter("no match");
       else if (e.matchesCount && e.matchesCount.total > 0)
@@ -286,11 +298,30 @@ export class Viewer {
   // --- Zoom ---
 
   zoomBy(factor: number): void {
+    // PDF.js's `currentScaleValue` setter doesn't preserve the viewer's
+    // visible region on its own — the viewport drifts because the content
+    // above grows / shrinks but scrollTop stays fixed. Keep the viewport
+    // centre anchored on the same content by scaling scroll offsets in
+    // proportion to the new scroll dimensions.
+    const oldW = this.container.scrollWidth;
+    const oldH = this.container.scrollHeight;
+    const cx = this.container.scrollLeft + this.container.clientWidth / 2;
+    const cy = this.container.scrollTop + this.container.clientHeight / 2;
+
     const next = Math.max(
       MIN_SCALE,
       Math.min(MAX_SCALE, this.pdfViewer.currentScale * factor),
     );
     this.pdfViewer.currentScaleValue = String(next);
+
+    const newW = this.container.scrollWidth;
+    const newH = this.container.scrollHeight;
+    if (oldW > 0 && oldH > 0) {
+      this.container.scrollLeft =
+        cx * (newW / oldW) - this.container.clientWidth / 2;
+      this.container.scrollTop =
+        cy * (newH / oldH) - this.container.clientHeight / 2;
+    }
   }
 
   zoomIn(): void {
@@ -303,6 +334,67 @@ export class Viewer {
 
   fitWidth(): void {
     this.pdfViewer.currentScaleValue = "page-width";
+  }
+
+  // --- Download / Print ---
+
+  download(): void {
+    if (!this.pdfDocument) return;
+    const doc = this.pdfDocument;
+    void (async () => {
+      const initialSubdir = await loadLastDownloadSubdir();
+      showSaveDialog({
+        defaultName: suggestedFilename(this.pdfUrl),
+        initialSubdir,
+        onCancel: () => {
+          this.container.focus();
+        },
+        onConfirm: (filename, subdir) => {
+          this.container.focus();
+          void (async () => {
+            try {
+              await downloadPdf(doc, { filename });
+              await saveLastDownloadSubdir(subdir);
+              this.setStatusCenter(`saved ${filename}`);
+              setTimeout(() => this.clearStatusCenter(), 1500);
+            } catch (err) {
+              console.error("download failed:", err);
+              this.setStatusCenter("download failed");
+              setTimeout(() => this.clearStatusCenter(), 1800);
+            }
+          })();
+        },
+        onSaveAs: (filename) => {
+          this.container.focus();
+          void (async () => {
+            try {
+              await downloadPdf(doc, { filename, saveAs: true });
+              this.setStatusCenter("saved");
+              setTimeout(() => this.clearStatusCenter(), 1500);
+            } catch (err) {
+              // User cancellation surfaces as an error here; ignore silently.
+              if (!isUserCancellation(err)) {
+                console.error("save-as failed:", err);
+                this.setStatusCenter("save failed");
+                setTimeout(() => this.clearStatusCenter(), 1800);
+              }
+            }
+          })();
+        },
+      });
+    })();
+  }
+
+  async print(): Promise<void> {
+    if (!this.pdfDocument) return;
+    this.setStatusCenter("preparing print…");
+    try {
+      await printPdf(this.pdfDocument);
+    } catch (err) {
+      console.error("print failed:", err);
+    } finally {
+      this.clearStatusCenter();
+    }
   }
 
   // --- Highlights ---
@@ -403,12 +495,49 @@ export class Viewer {
     this.statusCenter.textContent = "";
   }
 
+  /**
+   * Whether find-related events are allowed to write the status center.
+   * vim-controller flips this on when opening the search bar and off when
+   * the user Escs out, since PDFFindController's reset on `findbarclose`
+   * dispatches match-count updates asynchronously and would otherwise
+   * repaint the counter after we thought we'd cleared it.
+   */
+  findStatusEnabled = false;
+
   setModeLabel(text: string): void {
     const el = document.getElementById("modeIndicator");
     if (!el) return;
     el.textContent = text;
     el.classList.toggle("active", text.length > 0);
   }
+}
+
+const LAST_SUBDIR_KEY = "vimdf:lastDownloadSubdir";
+
+async function loadLastDownloadSubdir(): Promise<string> {
+  try {
+    const r = await chrome.storage.local.get(LAST_SUBDIR_KEY);
+    const v = r[LAST_SUBDIR_KEY];
+    return typeof v === "string" ? v : "";
+  } catch {
+    return "";
+  }
+}
+
+async function saveLastDownloadSubdir(subdir: string): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [LAST_SUBDIR_KEY]: subdir });
+  } catch {
+    // Non-fatal; next open just re-defaults to "".
+  }
+}
+
+function isUserCancellation(err: unknown): boolean {
+  // Chrome surfaces a dismissed save-as picker as a lastError whose message
+  // contains "canceled" (or "interrupted" on some builds). No stable code,
+  // so match on the message.
+  const msg = String((err as { message?: string })?.message ?? err ?? "");
+  return /cancel|interrupt/i.test(msg);
 }
 
 function applyTheme(theme: Settings["theme"]): void {

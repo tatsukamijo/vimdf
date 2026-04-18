@@ -281,6 +281,288 @@ body.sidebar-open #viewerContainer {
   color: var(--hint-matched-fg, #f97316);
 }
 
+/* Finder overlay (Telescope-style fuzzy picker) */
+#finder {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 35;
+}
+
+#finder[hidden] {
+  display: none;
+}
+
+#finder .finder-box {
+  width: min(1100px, 92vw);
+  height: min(640px, 78vh);
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color: var(--fg);
+}
+
+#finder .finder-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #202020;
+}
+
+#finder .finder-prompt {
+  color: var(--accent);
+  font-weight: bold;
+  font-size: 14px;
+}
+
+#finder .finder-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+}
+
+#finder .finder-status {
+  color: #888;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+#finder .finder-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+}
+
+#finder .finder-list {
+  width: 45%;
+  overflow-y: auto;
+  border-right: 1px solid #2a2a2a;
+  padding: 4px 0;
+}
+
+#finder .finder-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 5px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+#finder .finder-row.selected {
+  background: rgba(122, 162, 247, 0.18);
+  border-left: 2px solid var(--accent);
+  padding-left: 10px;
+}
+
+#finder .finder-badge {
+  flex: 0 0 auto;
+  font-size: 10px;
+  padding: 1px 6px;
+  border-radius: 3px;
+  background: #2a2a2a;
+  color: #aaa;
+  text-transform: lowercase;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+}
+
+#finder .finder-badge.kind-section { background: #1e3a5f; color: #9ecbff; }
+#finder .finder-badge.kind-figure  { background: #3f2f1a; color: #ffd27a; }
+#finder .finder-badge.kind-table   { background: #1a3f3a; color: #7fd8c4; }
+#finder .finder-badge.kind-mark    { background: #3f2a1a; color: #ffc078; }
+#finder .finder-badge.kind-highlight { background: #3a2a3f; color: #d7a4e8; }
+#finder .finder-badge.kind-text    { background: #1e3f2a; color: #8edea4; }
+
+#finder .finder-label {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#finder .finder-label b {
+  color: #ffc66d;
+  font-weight: 600;
+}
+
+#finder .finder-page {
+  flex: 0 0 auto;
+  color: #777;
+  font-size: 11px;
+}
+
+#finder .finder-preview {
+  flex: 1;
+  padding: 14px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background: #161616;
+}
+
+#finder .finder-preview-header {
+  font-size: 11px;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+#finder .finder-preview-thumb {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 120px;
+  color: #666;
+  font-size: 11px;
+}
+
+#finder .finder-preview-thumb canvas {
+  max-width: 100%;
+  border: 1px solid #333;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.5);
+  background: #fff;
+}
+
+#finder .finder-preview-body {
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-size: 12px;
+  line-height: 1.55;
+  color: #bbb;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+#finder .finder-preview-body b {
+  background: rgba(255, 200, 0, 0.35);
+  color: #fff;
+  padding: 0 2px;
+  border-radius: 2px;
+  font-weight: 600;
+}
+
+#finder .finder-footer {
+  display: flex;
+  gap: 14px;
+  padding: 6px 14px;
+  border-top: 1px solid #2a2a2a;
+  background: #1c1c1c;
+  font-size: 11px;
+  color: #888;
+}
+
+#finder kbd {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0 5px;
+  color: #ddd;
+  font-family: inherit;
+  font-size: 10px;
+}
+
+/* Save dialog — shares the finder's visual language. */
+#saveDialog {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 40;
+}
+
+#saveDialog .save-box {
+  width: min(640px, 86vw);
+  background: #1a1a1a;
+  border: 1px solid #333;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.65);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  color: var(--fg);
+}
+
+#saveDialog .save-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #2a2a2a;
+  background: #202020;
+  font-size: 14px;
+}
+
+#saveDialog .save-prompt {
+  color: var(--accent);
+  font-weight: bold;
+}
+
+#saveDialog .save-prefix {
+  color: #888;
+  user-select: none;
+}
+
+#saveDialog .save-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font: inherit;
+  font-size: 14px;
+}
+
+#saveDialog .save-footer {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  padding: 6px 14px;
+  border-top: 1px solid #2a2a2a;
+  background: #1c1c1c;
+  font-size: 11px;
+  color: #888;
+}
+
+#saveDialog .save-hint {
+  margin-left: auto;
+  color: #666;
+  font-size: 10px;
+}
+
+#saveDialog kbd {
+  background: #2a2a2a;
+  border: 1px solid #3a3a3a;
+  border-bottom-width: 2px;
+  border-radius: 3px;
+  padding: 0 5px;
+  color: #ddd;
+  font-family: inherit;
+  font-size: 10px;
+}
+
 /* Help overlay */
 #help {
   position: absolute;
@@ -342,5 +624,51 @@ body.sidebar-open #viewerContainer {
   margin-bottom: 0;
   margin-top: 16px;
   font-size: 12px;
+}
+
+#helpSearch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 4px 0 12px;
+  padding: 6px 10px;
+  border: 1px solid #333;
+  border-radius: 4px;
+  background: #1a1a1a;
+}
+
+#helpSearch[hidden] {
+  display: none;
+}
+
+#helpSearch .help-search-prompt {
+  color: var(--accent);
+  font-family:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  font-weight: bold;
+}
+
+#helpSearchInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  color: var(--fg);
+  font-family:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 13px;
+}
+
+#helpSearchStatus {
+  color: #777;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* When a help search is active, rows not matching the query are hidden.
+   Section headers stay visible as long as at least one row under them
+   matches (.help-section-hidden is toggled by the JS filter). */
+#help tr.help-filter-hidden {
+  display: none;
 }
 

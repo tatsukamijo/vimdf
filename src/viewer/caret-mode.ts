@@ -75,18 +75,10 @@ export class CaretMode {
   }
 
   enterInsert(): void {
-    const currentPageIdx = this.viewer.currentPage - 1;
-    // Recompute the caret if (a) there's no prior caret, (b) the visible
-    // page changed, or (c) a link/outline/find jump happened — the latter
-    // matters for in-page citation jumps where pageIdx alone doesn't change.
-    const pendingJump = this.viewer.lastJumpDest !== null;
-    if (
-      !this.caret ||
-      this.caret.pageIdx !== currentPageIdx ||
-      pendingJump
-    ) {
-      this.caret = this.findStartCaret();
-    }
+    // Always reseed from the viewport — sticky insert positions feel
+    // unpredictable ("why is the caret back in the middle of the previous
+    // paragraph?") once you've scrolled or jumped.
+    this.caret = this.findStartCaret();
     if (!this.caret) {
       this.viewer.setStatusCenter("no text on this page");
       setTimeout(() => this.viewer.clearStatusCenter(), 1000);

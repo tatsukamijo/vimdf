@@ -31,9 +31,19 @@ VimDF replaces Chrome's built-in PDF viewer with a modal, keyboard-driven one. I
 ## ✨ Features
 
 - **Vim-style navigation** — `j`/`k`/`h`/`l`, `gg`/`G`/`{n}G`, `Ctrl-d`/`Ctrl-u`/`Ctrl-f`/`Ctrl-b`
-- **Search** — `/` to query, `n`/`N` to cycle matches; `Ctrl-F` for PDF.js native find
+- **Search** — `/` to query, `n`/`N` to cycle matches
+- **Fuzzy finder** (`T`) — Telescope-style picker across outline, figure/table captions, marks, highlights, and full text. Live preview with page thumbnail and highlighted snippet
+
+  <p align="center">
+    <img src="assets/store-screenshots/02-fuzzy-finder.png" alt="VimDF fuzzy finder with page preview" width="720">
+  </p>
+
 - **Marks** — `m{a-z}` to set, `'{a-z}` to jump back
-- **Link hints** — `f` to show yellow hint labels on every link in view, `F` for new tab
+- **Link hints** — `f` shows two-letter hint labels on every link in view, `F` opens in a new tab. After following a citation / internal link, `Ctrl-O` jumps back and `Ctrl-I` / `Tab` jumps forward through the history
+
+  <p align="center">
+    <img src="assets/store-screenshots/03-link-hints.png" alt="VimDF link hints over a PDF page" width="720">
+  </p>
 - **Jump list** — `Ctrl-O` / `Ctrl-I` / `Tab` to traverse your jump history (like Vim's `''` stack)
 - **Outline sidebar** — `o` toggles table of contents, auto-focuses the section you're currently reading; `j`/`k` moves selection, `Enter` jumps
 - **Caret mode** — `i` enters a Vim-modal caret over the text layer:
@@ -42,9 +52,17 @@ VimDF replaces Chrome's built-in PDF viewer with a modal, keyboard-driven one. I
   - `0`/`$` line ends, `zz`/`zt`/`zb` caret-recentering
   - `v` / `V` / `Ctrl-V` for char / line / block VISUAL modes
   - `y` yank to clipboard, `H` save selection as persistent highlight
+- **Download / Print** — `Ctrl-S` opens a finder-styled save dialog (defaults to `~/Downloads/`, remembers your last subfolder, `Ctrl-↵` for a native "Save as…" picker). `Ctrl-P` prints with page sizes matched to the PDF
+
+  <p align="center">
+    <img src="assets/store-screenshots/04-save-dialog.png" alt="VimDF save dialog" width="720">
+  </p>
+
+- **Publisher shims** — auto-redirects Science / OpenReview / ACM / arXiv viewer pages to the raw PDF so you stay in VimDF
 - **Remembers last page** per document (toggleable)
 - **Theming** — Auto/Dark/Light; customizable hint & status-bar colors
 - **Keymap aliases** — bind your own keys to half/full-page scroll commands
+- **Scrollable & searchable help** — `?` opens the keybinding reference; `j`/`k` to scroll, `/` to filter live
 
 Press `?` inside the viewer for the full keybinding reference.
 
@@ -95,11 +113,14 @@ src/
     ├── viewer.ts                  # PDF.js integration, state persistence
     ├── vim-controller.ts          # root keydown dispatcher
     ├── caret-mode.ts              # modal text-caret navigation & selection
+    ├── finder.ts                  # Telescope-style fuzzy finder (T)
     ├── hints.ts                   # link-hint overlay
     ├── outline.ts                 # sidebar TOC
-    ├── search.ts                  # / and Ctrl-F search controllers
+    ├── search.ts                  # / search controller (PDF.js find)
     ├── marks.ts                   # per-doc mark persistence
     ├── highlights.ts              # user-saved highlights layer
+    ├── print.ts                   # rasterised print + PDF download
+    ├── save-dialog.ts             # modal filename picker for Ctrl-S
     └── continuous-scroll.ts       # rAF-driven smooth scroll for held keys
 ```
 

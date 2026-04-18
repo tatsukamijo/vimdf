@@ -17,8 +17,9 @@ import { ContinuousScroll } from "./continuous-scroll";
 import { HintController } from "./hints";
 import { JumpList, type JumpPos } from "./jump-list";
 import { CaretMode } from "./caret-mode";
+import { Finder } from "./finder";
 
-type Mode = "normal" | "search" | "hint";
+type Mode = "normal" | "search" | "hint" | "finder";
 type ScrollKey = "j" | "k" | "h" | "l";
 
 export class VimController {
@@ -33,6 +34,7 @@ export class VimController {
   private hints: HintController;
   private jumps = new JumpList();
   private caretMode: CaretMode;
+  private finder: Finder;
 
   constructor(
     private viewer: Viewer,
@@ -42,6 +44,14 @@ export class VimController {
     this.scroller = new ContinuousScroll(viewer.container);
     this.hints = new HintController(viewer);
     this.caretMode = new CaretMode(viewer);
+    this.finder = new Finder(viewer, marks, {
+      recordJump: () => this.jumps.record(this.snapshot()),
+      getHighlights: () => viewer.highlights,
+      onClose: () => {
+        this.mode = "normal";
+        this.viewer.container.focus();
+      },
+    });
     viewer.eventBus.on("pagerendered", () => this.caretMode.render());
   }
 
@@ -105,19 +115,43 @@ export class VimController {
   private onKeyDown = (e: KeyboardEvent): void => {
     const key = e.key;
 
-    // Help overlay always responds to ? and Escape, regardless of focus.
-    if (this.isHelpOpen()) {
-      if (key === "?" || key === "Escape") {
+    // If the user is typing into any form input (save dialog, finder,
+    // search, help filter…), stay out of the way entirely. Our capture-phase
+    // listener otherwise intercepts keys before they can reach the input —
+    // e.g. caret-mode would turn a `v` inside the save dialog into a visual-
+    // mode toggle, and Cmd+V paste would never land in the field. Dedicated
+    // inputs handle their own Esc/Enter; everything else is a pass-through.
+    const target = e.target as Element | null;
+    if (
+      target instanceof HTMLInputElement ||
+      target instanceof HTMLTextAreaElement ||
+      (target instanceof HTMLElement && target.isContentEditable)
+    ) {
+      return;
+    }
+
+    // Download / Print — intercept browser defaults (Save Page As / Print
+    // dialog targeting the viewer UI) and drive PDF-aware flows instead.
+    // Matches normal PDF viewers: Ctrl/Cmd+S saves the PDF bytes, Ctrl/Cmd+P
+    // prints the rendered pages.
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+      const lk = key.toLowerCase();
+      if (lk === "s") {
         e.preventDefault();
-        e.stopPropagation();
-        this.closeHelp();
+        void this.viewer.download();
         return;
       }
-      // Swallow other keys while help is open so they don't scroll / toggle
-      // modes behind the overlay.
-      if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      if (lk === "p") {
         e.preventDefault();
+        void this.viewer.print();
+        return;
       }
+    }
+
+    // Help overlay: supports Vim-style scroll (j/k/Ctrl-d/u/gg/G) and an
+    // inline "/" filter for the bindings table.
+    if (this.isHelpOpen()) {
+      if (this.handleHelpKey(e)) return;
       return;
     }
 
@@ -127,6 +161,7 @@ export class VimController {
     }
 
     if (this.mode === "search") return; // search input owns events
+    if (this.mode === "finder") return; // finder input owns events
 
     // Outline navigation takes priority over caret mode so j/k/Enter can steer
     // the sidebar even while caret insert/visual is active.
@@ -202,15 +237,6 @@ export class VimController {
         }
       }
       this.caretMode.handleKey(e);
-      return;
-    }
-
-    const target = e.target as Element | null;
-    if (
-      target instanceof HTMLInputElement ||
-      target instanceof HTMLTextAreaElement ||
-      (target instanceof HTMLElement && target.isContentEditable)
-    ) {
       return;
     }
 
@@ -396,6 +422,11 @@ export class VimController {
         this.viewer.fitWidth();
         return;
 
+      case "T":
+        e.preventDefault();
+        this.openFinder();
+        return;
+
       case "o":
         e.preventDefault();
         toggleSidebar();
@@ -446,6 +477,7 @@ export class VimController {
         return;
 
       case "Escape":
+        this.viewer.findStatusEnabled = false;
         this.viewer.clearStatusCenter();
         this.pendingCount = "";
         this.pendingG = false;
@@ -553,6 +585,11 @@ export class VimController {
     }
   }
 
+  private openFinder(): void {
+    this.mode = "finder";
+    void this.finder.show();
+  }
+
   private enterSearch(): void {
     this.mode = "search";
     const bar = document.getElementById("searchbar");
@@ -560,6 +597,7 @@ export class VimController {
     bar?.removeAttribute("hidden");
     input.value = "";
     input.focus();
+    this.viewer.findStatusEnabled = true;
     this.search.begin();
   }
 
@@ -567,7 +605,11 @@ export class VimController {
     this.mode = "normal";
     const bar = document.getElementById("searchbar");
     bar?.setAttribute("hidden", "");
-    if (opts.clear) this.search.clear();
+    if (opts.clear) {
+      this.viewer.findStatusEnabled = false;
+      this.search.clear();
+      this.viewer.clearStatusCenter();
+    }
     this.viewer.container.focus();
   }
 
@@ -586,7 +628,215 @@ export class VimController {
   }
 
   private closeHelp(): void {
+    this.closeHelpSearch();
     document.getElementById("help")?.setAttribute("hidden", "");
+  }
+
+  // --- Help overlay key handling ---
+
+  // `gg` prefix (scoped to help so it doesn't collide with the main `gg`).
+  private helpPendingG = false;
+
+  /**
+   * Handle a keystroke while the help overlay is visible. Returns true if
+   * the event was consumed; the outer handler always ignores the rest of
+   * its pipeline in that case. When the help-search input is focused we
+   * return false for non-navigation keys so the input processes them
+   * naturally.
+   */
+  private handleHelpKey(e: KeyboardEvent): boolean {
+    const key = e.key;
+    const searchInput = document.getElementById(
+      "helpSearchInput",
+    ) as HTMLInputElement | null;
+    const searchActive =
+      !!searchInput &&
+      !document.getElementById("helpSearch")!.hasAttribute("hidden");
+    const focused = document.activeElement === searchInput;
+
+    // Input-focused flow: Esc closes the filter (back to scroll mode);
+    // Enter dismisses focus. Let every other key through to the <input>.
+    if (focused && searchActive) {
+      if (key === "Escape") {
+        e.preventDefault();
+        this.closeHelpSearch();
+        return true;
+      }
+      if (key === "Enter") {
+        e.preventDefault();
+        searchInput!.blur();
+        return true;
+      }
+      return true; // consume so outer handler doesn't act, input handles it
+    }
+
+    // Scroll / navigation mode.
+    const helpEl = document.querySelector<HTMLElement>("#help .help-inner");
+    if (!helpEl) {
+      // Fallback: just honour ?/Esc to close.
+      if (key === "?" || key === "Escape") {
+        e.preventDefault();
+        this.closeHelp();
+      }
+      return true;
+    }
+
+    if (key === "Escape") {
+      e.preventDefault();
+      if (searchActive) this.closeHelpSearch();
+      else this.closeHelp();
+      return true;
+    }
+    if (key === "?" && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      this.closeHelp();
+      return true;
+    }
+
+    // `gg` two-key sequence.
+    if (this.helpPendingG) {
+      this.helpPendingG = false;
+      if (key === "g") {
+        e.preventDefault();
+        helpEl.scrollTop = 0;
+        return true;
+      }
+    }
+
+    const step = this.viewer.settings.scrollStep;
+    if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
+      const lk = key.toLowerCase();
+      if (lk === "d") {
+        e.preventDefault();
+        helpEl.scrollBy({ top: helpEl.clientHeight * 0.5, behavior: "auto" });
+        return true;
+      }
+      if (lk === "u") {
+        e.preventDefault();
+        helpEl.scrollBy({ top: -helpEl.clientHeight * 0.5, behavior: "auto" });
+        return true;
+      }
+      if (lk === "f") {
+        e.preventDefault();
+        helpEl.scrollBy({ top: helpEl.clientHeight * 0.95, behavior: "auto" });
+        return true;
+      }
+      if (lk === "b") {
+        e.preventDefault();
+        helpEl.scrollBy({ top: -helpEl.clientHeight * 0.95, behavior: "auto" });
+        return true;
+      }
+    }
+
+    switch (key) {
+      case "j":
+        e.preventDefault();
+        helpEl.scrollBy({ top: step, behavior: "auto" });
+        return true;
+      case "k":
+        e.preventDefault();
+        helpEl.scrollBy({ top: -step, behavior: "auto" });
+        return true;
+      case "g":
+        e.preventDefault();
+        this.helpPendingG = true;
+        return true;
+      case "G":
+        e.preventDefault();
+        helpEl.scrollTop = helpEl.scrollHeight;
+        return true;
+      case "/":
+        e.preventDefault();
+        this.openHelpSearch();
+        return true;
+    }
+
+    // Swallow other plain keys so they don't reach the PDF viewer behind
+    // the overlay. Modifier combos (Cmd+C copy, Ctrl+F native find, etc.)
+    // fall through to the browser.
+    if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+    }
+    return true;
+  }
+
+  private openHelpSearch(): void {
+    const bar = document.getElementById("helpSearch");
+    const input = document.getElementById(
+      "helpSearchInput",
+    ) as HTMLInputElement | null;
+    if (!bar || !input) return;
+    bar.removeAttribute("hidden");
+    input.focus();
+    input.select();
+    // Wire the input listener lazily so we don't need to care about it
+    // during initial construction.
+    if (!input.dataset.vimdfBound) {
+      input.addEventListener("input", () => this.applyHelpFilter(input.value));
+      input.dataset.vimdfBound = "1";
+    }
+    this.applyHelpFilter(input.value);
+  }
+
+  private closeHelpSearch(): void {
+    const bar = document.getElementById("helpSearch");
+    const input = document.getElementById(
+      "helpSearchInput",
+    ) as HTMLInputElement | null;
+    if (input) input.value = "";
+    bar?.setAttribute("hidden", "");
+    this.applyHelpFilter("");
+  }
+
+  /**
+   * Hide every binding row whose text doesn't contain the query. A section
+   * header (first cell spans both columns) follows the visibility of the
+   * rows beneath it so a matched binding still shows its group.
+   */
+  private applyHelpFilter(raw: string): void {
+    const q = raw.trim().toLowerCase();
+    const rows = Array.from(
+      document.querySelectorAll<HTMLTableRowElement>("#help table tr"),
+    );
+    if (!q) {
+      for (const r of rows) r.classList.remove("help-filter-hidden");
+      this.setHelpSearchStatus("");
+      return;
+    }
+    // First pass: data rows.
+    type Row = { el: HTMLTableRowElement; isHeader: boolean; matches: boolean };
+    const info: Row[] = rows.map((el) => {
+      const isHeader = !!el.querySelector("th");
+      const text = (el.textContent ?? "").toLowerCase();
+      return { el, isHeader, matches: !isHeader && text.includes(q) };
+    });
+    // Second pass: header visible iff any data row between this header
+    // and the next header matches.
+    let matchedCount = 0;
+    for (let i = 0; i < info.length; i++) {
+      const row = info[i];
+      if (!row.isHeader) {
+        if (row.matches) matchedCount++;
+        row.el.classList.toggle("help-filter-hidden", !row.matches);
+        continue;
+      }
+      let anyMatch = false;
+      for (let j = i + 1; j < info.length && !info[j].isHeader; j++) {
+        if (info[j].matches) {
+          anyMatch = true;
+          break;
+        }
+      }
+      row.el.classList.toggle("help-filter-hidden", !anyMatch);
+    }
+    this.setHelpSearchStatus(
+      `${matchedCount} match${matchedCount === 1 ? "" : "es"}`,
+    );
+  }
+
+  private setHelpSearchStatus(text: string): void {
+    const el = document.getElementById("helpSearchStatus");
+    if (el) el.textContent = text;
   }
 }
 

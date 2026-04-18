@@ -28,4 +28,8 @@ export class MarksStore {
   get(name: string): MarkPosition | undefined {
     return this.marks[name];
   }
+
+  all(): Readonly<MarkMap> {
+    return this.marks;
+  }
 }

@@ -37,6 +37,17 @@
     <div id="help" hidden>
       <div class="help-inner">
         <h2>VimDF — Keybindings</h2>
+        <div id="helpSearch" hidden>
+          <span class="help-search-prompt">/</span>
+          <input
+            type="text"
+            id="helpSearchInput"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="filter bindings…"
+          />
+          <span id="helpSearchStatus"></span>
+        </div>
         <table>
           <tr><th colspan="2">Navigation</th></tr>
           <tr><td>j / k</td><td>Scroll down / up</td></tr>
@@ -49,7 +60,6 @@
           <tr><th colspan="2">Search</th></tr>
           <tr><td>/</td><td>Search</td></tr>
           <tr><td>n / N</td><td>Next / previous match</td></tr>
-          <tr><td>Ctrl-F</td><td>Native find</td></tr>
           <tr><td>Esc</td><td>Close search</td></tr>
 
           <tr><th colspan="2">Marks</th></tr>
@@ -68,7 +78,22 @@
           <tr><td>o</td><td>Toggle outline (auto-focuses first item)</td></tr>
           <tr><td>j/k, Enter (in outline)</td><td>Move selection, jump to section</td></tr>
           <tr><td>Esc / Ctrl-h (in outline)</td><td>Release outline focus (sidebar stays open)</td></tr>
+          <tr><td>T</td><td>Open finder (sections, marks, highlights, full text)</td></tr>
+          <tr><td>Ctrl-S / Cmd-S</td><td>Download PDF</td></tr>
+          <tr><td>Ctrl-P / Cmd-P</td><td>Print</td></tr>
           <tr><td>?</td><td>Toggle this help</td></tr>
+
+          <tr><th colspan="2">Help (this panel)</th></tr>
+          <tr><td>j / k</td><td>Scroll help down / up</td></tr>
+          <tr><td>Ctrl-d / Ctrl-u</td><td>Half page down / up</td></tr>
+          <tr><td>gg / G</td><td>Top / bottom</td></tr>
+          <tr><td>/</td><td>Filter bindings</td></tr>
+
+          <tr><th colspan="2">Finder</th></tr>
+          <tr><td>Ctrl-n / Ctrl-p</td><td>Next / previous result</td></tr>
+          <tr><td>Ctrl-d / Ctrl-u</td><td>Jump 8 rows</td></tr>
+          <tr><td>Enter</td><td>Jump to result</td></tr>
+          <tr><td>Esc</td><td>Close finder</td></tr>
 
           <tr><th colspan="2">Caret mode</th></tr>
           <tr><td>i</td><td>Enter INSERT (caret on text)</td></tr>

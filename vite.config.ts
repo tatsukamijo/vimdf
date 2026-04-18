@@ -8,7 +8,7 @@ const manifest = defineManifest({
   version: "0.1.0",
   description: "Navigate PDFs with Vim keybindings",
   author: { email: "tatsukamijo@icloud.com" },
-  permissions: ["declarativeNetRequest", "storage"],
+  permissions: ["declarativeNetRequest", "storage", "downloads"],
   host_permissions: ["<all_urls>"],
   background: {
     service_worker: "src/background/service-worker.ts",
