@@ -80,6 +80,12 @@ chrome.runtime.onInstalled.addListener((details) => {
   void ensureRedirectRules();
   if (details.reason === "install") {
     void chrome.storage.local.set({ vimdf_show_conflict_warning: true });
+  } else if (details.reason === "update") {
+    void chrome.storage.local.set({
+      vimdf_show_update_notification: true,
+      vimdf_version: chrome.runtime.getManifest().version,
+      vimdf_previous_version: details.previousVersion ?? "",
+    });
   }
 });
 chrome.runtime.onStartup.addListener(() => {

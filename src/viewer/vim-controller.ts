@@ -262,13 +262,12 @@ export class VimController {
       this.pendingMark = null;
       if (/^[a-zA-Z]$/.test(key)) {
         e.preventDefault();
-        this.marks.set(key, {
-          page: this.viewer.currentPage,
-          scrollTop: this.viewer.container.scrollTop,
-          scrollLeft: this.viewer.container.scrollLeft,
-        });
-        this.viewer.setStatusCenter(`mark ${key} set`);
-        setTimeout(() => this.viewer.clearStatusCenter(), 1200);
+        const anchor = this.viewer.captureMarkAnchor();
+        if (anchor) {
+          this.marks.set(key, anchor);
+          this.viewer.setStatusCenter(`mark ${key} set`);
+          setTimeout(() => this.viewer.clearStatusCenter(), 1200);
+        }
       }
       return;
     }
@@ -280,15 +279,7 @@ export class VimController {
         e.preventDefault();
         const m = this.marks.get(key);
         if (m) {
-          this.viewer.goToPage(m.page);
-          // After page change, PDF.js snaps to page top; apply offset shortly.
-          requestAnimationFrame(() => {
-            this.viewer.container.scrollTo({
-              top: m.scrollTop,
-              left: m.scrollLeft,
-              behavior: "auto",
-            });
-          });
+          this.viewer.restoreMarkAnchor(m);
         } else {
           this.viewer.setStatusCenter(`mark ${key} not set`);
           setTimeout(() => this.viewer.clearStatusCenter(), 1200);

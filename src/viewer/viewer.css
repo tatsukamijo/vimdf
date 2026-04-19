@@ -281,6 +281,45 @@ body.sidebar-open #viewerContainer {
   color: var(--hint-matched-fg, #f97316);
 }
 
+/* Flash overlay briefly drawn on top of a line after jumping from the
+   finder to a text hit — gives the reader an immediate "here it is" cue
+   instead of dropping them at page-top with nothing to orient on. */
+.vimdf-finder-flash {
+  position: absolute;
+  pointer-events: none;
+  z-index: 80;
+  background: rgba(255, 213, 79, 0.55);
+  box-shadow: 0 0 0 2px rgba(255, 213, 79, 0.85);
+  border-radius: 2px;
+  animation: vimdf-finder-flash 1.8s ease-out forwards;
+}
+
+@keyframes vimdf-finder-flash {
+  0% {
+    opacity: 0;
+    transform: scale(1.15);
+  }
+  10% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  60% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+    background: rgba(255, 213, 79, 0);
+    box-shadow: 0 0 0 2px rgba(255, 213, 79, 0);
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .vimdf-finder-flash {
+    background: rgba(255, 193, 7, 0.35);
+    box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.7);
+  }
+}
+
 /* Finder overlay (Telescope-style fuzzy picker) */
 #finder {
   position: fixed;

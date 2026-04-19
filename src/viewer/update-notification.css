@@ -1,0 +1,149 @@
+/* Bottom-right update toast for VimDF. */
+
+.vimdf-update-notification {
+  position: fixed;
+  bottom: 20px;
+  right: 20px;
+  z-index: 999999;
+  max-width: 320px;
+  padding: 16px;
+  background: #fff;
+  color: #37352f;
+  border-radius: 8px;
+  box-shadow:
+    0 4px 16px rgba(0, 0, 0, 0.12),
+    0 0 0 1px rgba(0, 0, 0, 0.05);
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica,
+    "Apple Color Emoji", Arial, sans-serif,
+    "Segoe UI Emoji", "Segoe UI Symbol";
+  opacity: 0;
+  transform: translateY(20px);
+  transition:
+    opacity 0.3s ease-out,
+    transform 0.3s ease-out;
+}
+
+.vimdf-update-notification.vimdf-notification-visible {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.vimdf-update-notification.vimdf-notification-hidden {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.vimdf-update-notification .vimdf-notification-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.vimdf-update-notification .vimdf-notification-icon {
+  font-size: 20px;
+  line-height: 1;
+}
+
+.vimdf-update-notification .vimdf-notification-title {
+  flex: 1;
+  font-size: 15px;
+  font-weight: 600;
+  color: #37352f;
+}
+
+.vimdf-update-notification .vimdf-notification-dismiss {
+  background: none;
+  border: none;
+  font-size: 24px;
+  line-height: 1;
+  color: #9b9a97;
+  cursor: pointer;
+  padding: 0;
+  width: 24px;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: background-color 0.15s ease;
+}
+
+.vimdf-update-notification .vimdf-notification-dismiss:hover {
+  background-color: rgba(0, 0, 0, 0.05);
+}
+
+.vimdf-update-notification .vimdf-notification-body {
+  margin-bottom: 12px;
+}
+
+.vimdf-update-notification .vimdf-notification-version {
+  font-size: 13px;
+  font-weight: 500;
+  color: #6b46c1;
+  margin-bottom: 4px;
+}
+
+.vimdf-update-notification .vimdf-notification-message {
+  font-size: 14px;
+  color: #6b6b6b;
+  line-height: 1.5;
+}
+
+.vimdf-update-notification .vimdf-notification-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.vimdf-update-notification .vimdf-notification-whats-new {
+  background-color: #2383e2;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  padding: 6px 12px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+
+.vimdf-update-notification .vimdf-notification-whats-new:hover {
+  background-color: #1a6ec2;
+}
+
+.vimdf-update-notification .vimdf-notification-whats-new:active {
+  transform: scale(0.98);
+}
+
+@media (prefers-color-scheme: dark) {
+  .vimdf-update-notification {
+    background: #2f2f2f;
+    color: #e3e2e0;
+    box-shadow:
+      0 4px 16px rgba(0, 0, 0, 0.3),
+      0 0 0 1px rgba(255, 255, 255, 0.1);
+  }
+
+  .vimdf-update-notification .vimdf-notification-title {
+    color: #e3e2e0;
+  }
+
+  .vimdf-update-notification .vimdf-notification-dismiss:hover {
+    background-color: rgba(255, 255, 255, 0.06);
+  }
+
+  .vimdf-update-notification .vimdf-notification-message {
+    color: #ababab;
+  }
+}
+
+@media (max-width: 480px) {
+  .vimdf-update-notification {
+    max-width: none;
+    bottom: 10px;
+    left: 10px;
+    right: 10px;
+  }
+}

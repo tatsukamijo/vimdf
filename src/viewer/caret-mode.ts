@@ -85,7 +85,7 @@ export class CaretMode {
       return;
     }
     this.kind = "insert";
-    this.viewer.setModeLabel("-- INSERT --");
+    this.viewer.setModeLabel("-- CARET --");
     this.render();
   }
 
@@ -119,7 +119,7 @@ export class CaretMode {
     this.pendingG = false;
     this.pendingZ = false;
     this.pendingCount = "";
-    this.viewer.setModeLabel("-- INSERT --");
+    this.viewer.setModeLabel("-- CARET --");
     this.render();
   }
 
@@ -387,9 +387,14 @@ export class CaretMode {
 
   /**
    * Seed the caret near whatever just scrolled into view. Priority:
-   *   1. If a link/outline/find jump just happened, land at the destination
-   *      anchor. Uses the jump's own pageIdx rather than viewer.currentPage
-   *      — PDF.js reports currentPageNumber as the page occupying most of
+   *   1. If a link/outline/find jump just happened *and its landing point is
+   *      still visible in the viewport*, land at the destination anchor.
+   *      The visibility check matters: the jump dest is recorded on every
+   *      programmatic navigation and isn't cleared on manual scroll, so
+   *      without it a stale dest from an earlier jump would make `i` yank
+   *      the viewport back to that old location.
+   *      Uses the jump's own pageIdx rather than viewer.currentPage —
+   *      PDF.js reports currentPageNumber as the page occupying most of
    *      the viewport, which for top-of-viewport citation jumps is often
    *      the *next* page visible below.
    *   2. Otherwise, pick the visible span closest to the viewport top.
@@ -397,13 +402,23 @@ export class CaretMode {
   private findStartCaret(): Caret | null {
     const jump = this.viewer.resolveJumpDestClient();
     if (jump) {
-      const jumpSpans = this.getPageSpans(jump.pageIdx);
-      if (jumpSpans.length > 0) {
-        const idx = this.closestSpanTo(jumpSpans, jump.clientX, jump.clientY);
-        this.viewer.clearJumpDest();
-        if (idx >= 0) {
-          return { pageIdx: jump.pageIdx, spanIdx: idx, charOffset: 0 };
+      if (this.isJumpDestCurrent(jump)) {
+        const jumpSpans = this.getPageSpans(jump.pageIdx);
+        if (jumpSpans.length > 0) {
+          const idx = this.closestSpanTo(
+            jumpSpans,
+            jump.clientX,
+            jump.clientY,
+          );
+          this.viewer.clearJumpDest();
+          if (idx >= 0) {
+            return { pageIdx: jump.pageIdx, spanIdx: idx, charOffset: 0 };
+          }
         }
+      } else {
+        // Stale — drop it so subsequent `i` presses don't keep referencing
+        // a destination the user has already scrolled away from.
+        this.viewer.clearJumpDest();
       }
     }
 
@@ -425,6 +440,29 @@ export class CaretMode {
       }
     }
     return { pageIdx, spanIdx: bestIdx >= 0 ? bestIdx : 0, charOffset: 0 };
+  }
+
+  /**
+   * Is the recorded jump destination still "here"? We accept the jump when
+   * the landing Y is inside (or just outside) the viewport, or — for dests
+   * that carry no Y (Fit) — when the target page is adjacent to the
+   * currently-viewed page. A small vertical slack handles the case where a
+   * citation anchor is a handful of pixels above the top fold.
+   */
+  private isJumpDestCurrent(jump: {
+    pageIdx: number;
+    clientX: number | null;
+    clientY: number | null;
+  }): boolean {
+    const cRect = this.viewer.container.getBoundingClientRect();
+    if (jump.clientY !== null) {
+      const SLACK = 80;
+      return (
+        jump.clientY >= cRect.top - SLACK &&
+        jump.clientY <= cRect.bottom + SLACK
+      );
+    }
+    return Math.abs(this.viewer.currentPage - 1 - jump.pageIdx) <= 1;
   }
 
   private closestSpanTo(

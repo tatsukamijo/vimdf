@@ -1,5 +1,12 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { PDFLinkService } from "pdfjs-dist/web/pdf_viewer.mjs";
+import type { Viewer } from "./viewer";
+
+// Estimated heading geometry in PDF points. We don't know an outline entry's
+// true text metrics (they're not indexed), but ~14pt tall × ~400pt wide covers
+// most body-width headings without overflowing narrow pages.
+const SECTION_HEIGHT_PDF = 14;
+const SECTION_WIDTH_PDF = 400;
 
 interface OutlineNode {
   title: string;
@@ -14,13 +21,43 @@ interface RowMeta {
   row: HTMLElement;
   node: OutlineNode;
   page: number | null; // resolved asynchronously from node.dest
+  xPdf: number | null; // resolved PDF-space X from dest (XYZ/FitR only)
+  yPdf: number | null; // resolved PDF-space Y from dest (top for XYZ/FitH/FitBH)
 }
 
 let outlineRows: RowMeta[] = [];
 
+export interface OutlineSection {
+  title: string;
+  row: HTMLElement;
+  page: number | null;
+  xPdf: number | null;
+  yPdf: number | null;
+  activate: () => void;
+}
+
+export function getOutlineSections(): OutlineSection[] {
+  const out: OutlineSection[] = [];
+  for (const meta of outlineRows) {
+    const title = (meta.row.textContent ?? "").trim();
+    if (!title) continue;
+    const activate = activatorByRow.get(meta.row) ?? (() => meta.row.click());
+    out.push({
+      title,
+      row: meta.row,
+      page: meta.page,
+      xPdf: meta.xPdf,
+      yPdf: meta.yPdf,
+      activate,
+    });
+  }
+  return out;
+}
+
 export async function buildOutline(
   doc: PDFDocumentProxy,
   linkService: PDFLinkService,
+  viewer: Viewer,
 ): Promise<void> {
   outlineRows = [];
   const tree = document.getElementById("outlineTree");
@@ -35,53 +72,100 @@ export async function buildOutline(
     return;
   }
 
-  tree.appendChild(renderList(outline, linkService));
+  tree.appendChild(renderList(outline, linkService, viewer));
   void resolveOutlinePages(doc);
 }
 
 async function resolveOutlinePages(doc: PDFDocumentProxy): Promise<void> {
   for (const meta of outlineRows) {
-    meta.page = await resolveDestPage(doc, meta.node.dest);
+    const resolved = await resolveDest(doc, meta.node.dest);
+    meta.page = resolved.page;
+    meta.xPdf = resolved.xPdf;
+    meta.yPdf = resolved.yPdf;
   }
 }
 
-async function resolveDestPage(
+/**
+ * Resolve a PDF destination (either a named string or an array) to its target
+ * page and PDF-space coordinates. For XYZ dests, `xPdf`/`yPdf` give the
+ * top-left of where the viewport should land; for FitH/FitBH only `yPdf` is
+ * meaningful (horizontal fit). Returns nulls when the destination doesn't
+ * carry explicit coordinates (Fit / FitB) or when resolution fails.
+ */
+async function resolveDest(
   doc: PDFDocumentProxy,
   dest: unknown,
-): Promise<number | null> {
-  if (!dest) return null;
+): Promise<{ page: number | null; xPdf: number | null; yPdf: number | null }> {
+  const none = { page: null, xPdf: null, yPdf: null };
+  if (!dest) return none;
   let arr: unknown = dest;
   if (typeof dest === "string") {
     try {
       arr = await doc.getDestination(dest);
     } catch {
-      return null;
+      return none;
     }
   }
-  if (!Array.isArray(arr) || arr.length === 0) return null;
+  if (!Array.isArray(arr) || arr.length === 0) return none;
   const ref = arr[0];
-  if (!ref) return null;
+  if (!ref) return none;
+  let page: number | null = null;
   try {
     const idx = await doc.getPageIndex(
       ref as Parameters<PDFDocumentProxy["getPageIndex"]>[0],
     );
-    return idx + 1;
+    page = idx + 1;
   } catch {
-    return null;
+    return none;
   }
+  const name = (arr[1] as { name?: string } | undefined)?.name;
+  let xPdf: number | null = null;
+  let yPdf: number | null = null;
+  if (name === "XYZ" || name === "FitR") {
+    xPdf = typeof arr[2] === "number" ? (arr[2] as number) : null;
+    yPdf = typeof arr[3] === "number" ? (arr[3] as number) : null;
+  } else if (name === "FitH" || name === "FitBH") {
+    yPdf = typeof arr[2] === "number" ? (arr[2] as number) : null;
+  }
+  return { page, xPdf, yPdf };
 }
 
 function renderList(
   nodes: OutlineNode[],
   linkService: PDFLinkService,
+  viewer: Viewer,
 ): DocumentFragment {
   const frag = document.createDocumentFragment();
   for (const node of nodes) {
     const row = document.createElement("div");
     row.className = "outline-item";
     row.textContent = node.title;
+    const meta: RowMeta = {
+      row,
+      node,
+      page: null,
+      xPdf: null,
+      yPdf: null,
+    };
+    outlineRows.push(meta);
+    // Activation reads `meta` live — `resolveOutlinePages` mutates these
+    // fields asynchronously, so by the time the user actually clicks, the
+    // coords are (usually) populated and we can scroll-and-flash precisely.
+    // If they're still null (cold click before resolution completes, or a
+    // Fit/FitB dest without coords), fall back to the link service.
     const activate = (): void => {
-      if (node.dest) {
+      if (meta.page !== null && meta.yPdf !== null) {
+        viewer.flashScrollToLine(
+          meta.page,
+          meta.xPdf ?? 0,
+          // `yPdf` from XYZ/FitH is the *top* of the destination region;
+          // `flashScrollToLine` wants the baseline — shift down by the
+          // estimated height so line top ≈ yPdf.
+          meta.yPdf - SECTION_HEIGHT_PDF,
+          SECTION_WIDTH_PDF,
+          SECTION_HEIGHT_PDF,
+        );
+      } else if (node.dest) {
         linkService.goToDestination(
           node.dest as Parameters<PDFLinkService["goToDestination"]>[0],
         );
@@ -91,12 +175,11 @@ function renderList(
     };
     activatorByRow.set(row, activate);
     row.addEventListener("click", activate);
-    outlineRows.push({ row, node, page: null });
     frag.appendChild(row);
     if (node.items && node.items.length > 0) {
       const children = document.createElement("div");
       children.className = "outline-children";
-      children.appendChild(renderList(node.items, linkService));
+      children.appendChild(renderList(node.items, linkService, viewer));
       frag.appendChild(children);
     }
   }

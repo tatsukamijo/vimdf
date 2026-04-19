@@ -29,6 +29,7 @@ import {
   type Settings,
 } from "../common/settings";
 import { checkAndShowConflictWarning } from "./conflict-notification";
+import { checkAndShowUpdateNotification } from "./update-notification";
 import { downloadPdf, printPdf, suggestedFilename } from "./print";
 import { showSaveDialog } from "./save-dialog";
 
@@ -184,7 +185,7 @@ export class Viewer {
     this.userHighlights = await this.highlightStore.load();
 
     await this.applyDocumentTitle();
-    await buildOutline(this.pdfDocument, this.linkService);
+    await buildOutline(this.pdfDocument, this.linkService, this);
     await this.restoreState();
     this.updateStatus();
   }
@@ -275,6 +276,275 @@ export class Viewer {
   goToPage(page: number): void {
     const clamped = Math.max(1, Math.min(this.numPages, page));
     this.pdfViewer.currentPageNumber = clamped;
+  }
+
+  /**
+   * Capture what's at the viewport top-left as a zoom-stable PDF-space
+   * anchor. Used by `ma` (set mark): storing container pixel offsets breaks
+   * the moment the user zooms, because the scrollable region's total size
+   * scales with zoom but the raw offset doesn't.
+   *
+   * We always anchor to `currentPageNumber` (the page with the most visible
+   * area). `convertToPdfPoint` accepts out-of-range page-local Y coords
+   * (negative / > pageHeight) just fine — they represent points above /
+   * below that page — so this works even when the viewport sits on a
+   * page boundary.
+   */
+  captureMarkAnchor(): {
+    page: number;
+    xPdf: number;
+    yPdf: number;
+  } | null {
+    const pageIdx = this.currentPage - 1;
+    const pv = (this.pdfViewer as unknown as {
+      _pages?: Array<{
+        div?: HTMLElement;
+        viewport?: {
+          convertToPdfPoint: (x: number, y: number) => [number, number];
+        };
+      }>;
+    })._pages?.[pageIdx];
+    const pageEl = pv?.div;
+    const viewport = pv?.viewport;
+    if (!pageEl || !viewport) return null;
+    const pageRect = pageEl.getBoundingClientRect();
+    const containerRect = this.container.getBoundingClientRect();
+    // Page-local viewport coords of the container's top-left corner.
+    const vx = containerRect.left - pageRect.left;
+    const vy = containerRect.top - pageRect.top;
+    const [xPdf, yPdf] = viewport.convertToPdfPoint(vx, vy);
+    return { page: pageIdx + 1, xPdf, yPdf };
+  }
+
+  /**
+   * Inverse of `captureMarkAnchor`: scroll the container so the stored
+   * PDF-space anchor lands at the viewport top-left, regardless of current
+   * zoom. Legacy marks (no pdf coords, only scrollTop/scrollLeft) fall
+   * through to a direct scrollTo — those will still drift after zoom, but
+   * the user can re-set them to migrate.
+   */
+  restoreMarkAnchor(mark: {
+    page: number;
+    xPdf?: number;
+    yPdf?: number;
+    scrollTop?: number;
+    scrollLeft?: number;
+  }): void {
+    this.goToPage(mark.page);
+    // Two RAFs: page switch + layout settle. Same pattern as
+    // `flashScrollToLine` — without this, the page view's viewport isn't
+    // reliably available on a cold-page jump.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        const hasPdfAnchor =
+          typeof mark.xPdf === "number" &&
+          typeof mark.yPdf === "number" &&
+          Number.isFinite(mark.xPdf) &&
+          Number.isFinite(mark.yPdf);
+        if (hasPdfAnchor) {
+          const pv = (this.pdfViewer as unknown as {
+            _pages?: Array<{
+              div?: HTMLElement;
+              viewport?: {
+                convertToViewportPoint: (x: number, y: number) => [number, number];
+              };
+            }>;
+          })._pages?.[mark.page - 1];
+          const pageEl = pv?.div;
+          const viewport = pv?.viewport;
+          if (pageEl && viewport) {
+            const [vx, vy] = viewport.convertToViewportPoint(
+              mark.xPdf as number,
+              mark.yPdf as number,
+            );
+            const pageRect = pageEl.getBoundingClientRect();
+            const containerRect = this.container.getBoundingClientRect();
+            const top =
+              pageRect.top - containerRect.top + this.container.scrollTop + vy;
+            const left =
+              pageRect.left -
+              containerRect.left +
+              this.container.scrollLeft +
+              vx;
+            const maxTop = Math.max(
+              0,
+              this.container.scrollHeight - this.container.clientHeight,
+            );
+            const maxLeft = Math.max(
+              0,
+              this.container.scrollWidth - this.container.clientWidth,
+            );
+            this.container.scrollTo({
+              top: Math.max(0, Math.min(maxTop, top)),
+              left: Math.max(0, Math.min(maxLeft, left)),
+              behavior: "auto",
+            });
+            return;
+          }
+        }
+        // Legacy fallback.
+        if (typeof mark.scrollTop === "number") {
+          this.container.scrollTo({
+            top: mark.scrollTop,
+            left: mark.scrollLeft ?? 0,
+            behavior: "auto",
+          });
+        }
+      });
+    });
+  }
+
+  /**
+   * Scroll the given PDF-space rectangle (xPdf, yBaseline, widthPdf, heightPdf)
+   * so the line is visibly near the top of the viewport, then flash a yellow
+   * overlay on it briefly so the user can see exactly which line they landed
+   * on.
+   *
+   * Used by the finder for text hits: dropping the user at page-top after a
+   * fuzzy match leaves them scanning a dense page for the matched phrase,
+   * whereas positioning the hit in view and flashing it is self-explanatory.
+   *
+   * We bypass `pdfViewer.scrollPageIntoView` here because the viewer's
+   * overridden version re-aligns the target page's top with the container's
+   * top (needed for outline/link jumps under our layout), which would undo
+   * any Y offset inside the page. Instead we translate the PDF-space line
+   * top into container-scroll coordinates and set `scrollTop` directly.
+   *
+   * Coordinates are in PDF space (origin bottom-left, Y grows upward).
+   * `yBaseline` is the baseline of the text line; `heightPdf` is the line's
+   * glyph height.
+   */
+  flashScrollToLine(
+    pageNumber: number,
+    xPdf: number,
+    yBaseline: number,
+    widthPdf: number,
+    heightPdf: number,
+  ): void {
+    const clamped = Math.max(1, Math.min(this.numPages, pageNumber));
+    const pageIdx = clamped - 1;
+
+    // Ensure the target page is rendered / laid out before we measure.
+    // currentPageNumber triggers PDF.js to render nearby pages if needed.
+    this.pdfViewer.currentPageNumber = clamped;
+
+    // Two RAFs: first for the page switch / render to settle, second for
+    // layout. Without this the viewport isn't reliably available on a
+    // cold-page jump.
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        this.performLineScroll(pageIdx, xPdf, yBaseline, heightPdf);
+        this.spawnFinderFlash(clamped, xPdf, yBaseline, widthPdf, heightPdf);
+      });
+    });
+  }
+
+  private performLineScroll(
+    pageIdx: number,
+    xPdf: number,
+    yBaseline: number,
+    heightPdf: number,
+  ): void {
+    const pv = (this.pdfViewer as unknown as {
+      _pages?: Array<{
+        div?: HTMLElement;
+        viewport?: {
+          convertToViewportPoint: (x: number, y: number) => [number, number];
+        };
+      }>;
+    })._pages?.[pageIdx];
+    const pageEl = pv?.div;
+    const viewport = pv?.viewport;
+    if (!pageEl || !viewport) {
+      // Couldn't resolve page geometry — page already at least scrolled into
+      // view by the currentPageNumber setter above, so leave it at page top.
+      return;
+    }
+
+    // Viewport space: (0, 0) is top-left of the page element. PDF space has
+    // Y growing upward, so the line's visible top = baseline + height, and
+    // its visible bottom = baseline.
+    const [, vyLineTop] = viewport.convertToViewportPoint(
+      xPdf,
+      yBaseline + heightPdf,
+    );
+    const [, vyLineBottom] = viewport.convertToViewportPoint(xPdf, yBaseline);
+    const lineHeightVp = Math.max(8, Math.abs(vyLineBottom - vyLineTop));
+
+    // Translate the line's page-relative Y into container-scroll coordinates.
+    // pageEl.getBoundingClientRect().top is relative to the window; subtract
+    // container's own top and add current scrollTop to recover the line's
+    // absolute offset within the scrollable region.
+    const pageRect = pageEl.getBoundingClientRect();
+    const containerRect = this.container.getBoundingClientRect();
+    const lineTopInScroll =
+      pageRect.top - containerRect.top + this.container.scrollTop + vyLineTop;
+
+    // Center the line vertically in the viewport. The hit is what the user
+    // just selected; parking it dead-center makes it the most prominent
+    // thing on screen and gives equal context above and below.
+    const desiredOffset = Math.max(
+      0,
+      this.container.clientHeight / 2 - lineHeightVp / 2,
+    );
+    const maxScroll = Math.max(
+      0,
+      this.container.scrollHeight - this.container.clientHeight,
+    );
+    const newScrollTop = Math.max(
+      0,
+      Math.min(maxScroll, lineTopInScroll - desiredOffset),
+    );
+    this.container.scrollTop = newScrollTop;
+  }
+
+  private spawnFinderFlash(
+    pageNumber: number,
+    xPdf: number,
+    yBaseline: number,
+    widthPdf: number,
+    heightPdf: number,
+  ): void {
+    const pageView = this.pdfViewer.getPageView(pageNumber - 1) as
+      | {
+          viewport?: {
+            convertToViewportPoint: (x: number, y: number) => [number, number];
+          };
+        }
+      | null;
+    const pageEl = document.querySelector(
+      `.page[data-page-number="${pageNumber}"]`,
+    ) as HTMLElement | null;
+    if (!pageView?.viewport || !pageEl) return;
+
+    // PDF Y grows upward; viewport Y grows downward. Line top in PDF space
+    // is baseline + height, line bottom is baseline. Converting both gives
+    // correctly-ordered viewport Y coords.
+    const [vxLeft, vyTop] = pageView.viewport.convertToViewportPoint(
+      xPdf,
+      yBaseline + heightPdf,
+    );
+    const [vxRight, vyBottom] = pageView.viewport.convertToViewportPoint(
+      xPdf + widthPdf,
+      yBaseline,
+    );
+    const left = Math.min(vxLeft, vxRight);
+    const top = Math.min(vyTop, vyBottom);
+    const width = Math.max(6, Math.abs(vxRight - vxLeft));
+    // Expand the flash a touch so it reads as "this region" rather than
+    // "this thin baseline". 4px top/bottom padding plays well with most
+    // body text at normal zoom.
+    const pad = 3;
+    const height = Math.max(8, Math.abs(vyBottom - vyTop)) + pad * 2;
+
+    const flash = document.createElement("div");
+    flash.className = "vimdf-finder-flash";
+    flash.style.left = `${left - pad}px`;
+    flash.style.top = `${top - pad}px`;
+    flash.style.width = `${width + pad * 2}px`;
+    flash.style.height = `${height}px`;
+    pageEl.appendChild(flash);
+    setTimeout(() => flash.remove(), 1800);
   }
 
   scrollBy(dx: number, dy: number, behavior: ScrollBehavior = "smooth"): void {
@@ -599,6 +869,7 @@ async function main(): Promise<void> {
     });
 
   void checkAndShowConflictWarning();
+  void checkAndShowUpdateNotification();
 
   try {
     await viewer.load(file);

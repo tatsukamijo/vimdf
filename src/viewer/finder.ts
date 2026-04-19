@@ -10,6 +10,7 @@
 import type { Viewer } from "./viewer";
 import type { MarkPosition, MarksStore } from "./marks";
 import type { Highlight } from "./highlights";
+import { getOutlineSections } from "./outline";
 
 type EntryKind = "section" | "figure" | "table" | "mark" | "highlight" | "text";
 
@@ -32,6 +33,20 @@ interface Entry {
   // bolding the "Fig. N" marker prefix.
   previewBody?: string;
   previewBoldEnd?: number;
+}
+
+/**
+ * A single line of text from a page, with enough PDF-space geometry to
+ * scroll the viewport precisely to the matching line and flash a highlight
+ * on it (instead of dropping the user at page top).
+ */
+interface LineInfo {
+  text: string;
+  charStart: number; // offset in the joined pageText for the page
+  xStart: number;    // PDF-space left X
+  xEnd: number;      // PDF-space right X
+  yBaseline: number; // PDF-space baseline Y (transform[5])
+  height: number;    // line height in PDF points (from item metrics)
 }
 
 export interface FinderDeps {
@@ -68,15 +83,21 @@ export class Finder {
 
   // full-text index
   private pageText: string[] = [];
+  // Per-page lines, paired with their PDF-space geometry. Used to scroll
+  // and flash-highlight the exact line when activating a text hit.
+  private pageLines: LineInfo[][] = [];
   // Per-page captions, extracted during indexing. `text` is the full line
   // so the preview pane can show the whole caption; `markerLen` is the
   // length of the "Fig. N" / "Table N" prefix so we can bold it.
+  // `line` carries PDF-space geometry so activating a caption scrolls to
+  // and flashes the exact caption line (same treatment as text hits).
   private pageCaptions: Array<
     Array<{
       text: string;
       markerLen: number;
       kindWord: "Figure" | "Table";
       id: string;
+      line: LineInfo;
     }>
   > = [];
   private textIndexed = false;
@@ -148,7 +169,7 @@ export class Finder {
         </div>
         <div class="finder-footer">
           <kbd>↵</kbd> open
-          <kbd>^N</kbd>/<kbd>^P</kbd> move
+          <kbd>^J</kbd>/<kbd>^K</kbd> move
           <kbd>^D</kbd>/<kbd>^U</kbd> page
           <kbd>Esc</kbd> close
         </div>
@@ -263,24 +284,19 @@ export class Finder {
   private buildStaticEntries(): void {
     const list: Entry[] = [];
 
-    // Outline — walk the existing DOM so we inherit the outline module's
-    // activator closures (no need to re-resolve dests).
-    const outlineTree = document.getElementById("outlineTree");
-    if (outlineTree) {
-      const rows = Array.from(
-        outlineTree.querySelectorAll<HTMLElement>(".outline-item"),
-      );
-      for (const row of rows) {
-        const title = (row.textContent ?? "").trim();
-        if (!title) continue;
-        list.push({
-          kind: "section",
-          label: title,
-          page: 0,
-          score: 0,
-          activate: () => row.click(),
-        });
-      }
+    // Outline — sections share a single activator with the sidebar itself
+    // (set up in outline.ts), which scrolls-and-flashes when coords are
+    // resolved and falls back to linkService.goToDestination otherwise. By
+    // reusing that activator here, the sidebar click, outline Enter, and
+    // finder Enter all give the same flash-highlight UX.
+    for (const s of getOutlineSections()) {
+      list.push({
+        kind: "section",
+        label: s.title,
+        page: s.page ?? 0,
+        score: 0,
+        activate: s.activate,
+      });
     }
 
     // Figure / Table captions — detected from page text after indexing.
@@ -296,16 +312,7 @@ export class Finder {
         label: `'${name}`,
         page: pos.page,
         score: 0,
-        activate: () => {
-          this.viewer.goToPage(pos.page);
-          requestAnimationFrame(() => {
-            this.viewer.container.scrollTo({
-              top: pos.scrollTop,
-              left: pos.scrollLeft,
-              behavior: "auto",
-            });
-          });
-        },
+        activate: () => this.viewer.restoreMarkAnchor(pos),
       });
     }
 
@@ -341,12 +348,20 @@ export class Finder {
         seen.add(key);
         const pageNumber = p + 1;
         const preview = c.text.slice(0, 500);
+        const line = c.line;
         out.push({
           kind: c.kindWord === "Table" ? "table" : "figure",
           label: c.text.slice(0, 140),
           page: pageNumber,
           score: 0,
-          activate: () => this.viewer.goToPage(pageNumber),
+          activate: () =>
+            this.viewer.flashScrollToLine(
+              pageNumber,
+              line.xStart,
+              line.yBaseline,
+              line.xEnd - line.xStart,
+              line.height,
+            ),
           previewBody: preview,
           previewBoldEnd: Math.min(c.markerLen, preview.length),
         });
@@ -363,6 +378,7 @@ export class Finder {
     this.textIndexing = true;
     const total = doc.numPages;
     this.pageText = new Array(total).fill("");
+    this.pageLines = Array.from({ length: total }, () => []);
     this.pageCaptions = Array.from({ length: total }, () => []);
     const BATCH = 4;
     try {
@@ -402,7 +418,13 @@ export class Finder {
       // (the final positioning matrix: X = [4], Y = [5]) instead of
       // `hasEOL`, which PDF.js synthesises heuristically and gets wrong on
       // multi-column layouts.
-      type Item = { str: string; x: number; y: number; endX: number };
+      type Item = {
+        str: string;
+        x: number;
+        y: number;
+        endX: number;
+        height: number;
+      };
       const items: Item[] = [];
       for (const raw of tc.items) {
         if (!("str" in raw)) continue;
@@ -410,7 +432,8 @@ export class Finder {
         const x = raw.transform[4];
         const y = raw.transform[5];
         const w = (raw as { width?: number }).width ?? 0;
-        items.push({ str: raw.str, x, y, endX: x + w });
+        const h = (raw as { height?: number }).height ?? 0;
+        items.push({ str: raw.str, x, y, endX: x + w, height: h });
       }
       // Top-to-bottom (Y desc in PDF space), then left-to-right within a row.
       const Y_TOL = 3;
@@ -423,8 +446,9 @@ export class Finder {
       // a big X gap (typical of column breaks). 25pt is below an IEEE
       // gutter (~20–25pt) but well above normal word spacing.
       const X_GAP_COL = 25;
-      const lines: string[] = [];
+      const lines: LineInfo[] = [];
       let bucket: Item[] = [];
+      let charCursor = 0;
       const flush = () => {
         if (bucket.length === 0) return;
         const text = bucket
@@ -432,7 +456,27 @@ export class Finder {
           .join(" ")
           .replace(/\s+/g, " ")
           .trim();
-        if (text) lines.push(text);
+        if (text) {
+          let xStart = Infinity;
+          let xEnd = -Infinity;
+          let yBaseline = Infinity;
+          let height = 0;
+          for (const it of bucket) {
+            if (it.x < xStart) xStart = it.x;
+            if (it.endX > xEnd) xEnd = it.endX;
+            if (it.y < yBaseline) yBaseline = it.y;
+            if (it.height > height) height = it.height;
+          }
+          lines.push({
+            text,
+            charStart: charCursor,
+            xStart,
+            xEnd,
+            yBaseline,
+            height: height > 0 ? height : 12,
+          });
+          charCursor += text.length + 1; // +1 for the \n we'll join with
+        }
         bucket = [];
       };
       for (const it of items) {
@@ -455,10 +499,11 @@ export class Finder {
         markerLen: number;
         kindWord: "Figure" | "Table";
         id: string;
+        line: LineInfo;
       }> = [];
       const seenOnPage = new Set<string>();
       for (const line of lines) {
-        const m = line.match(CAPTION_LINE_RE);
+        const m = line.text.match(CAPTION_LINE_RE);
         if (!m) continue;
         const kindWord: "Figure" | "Table" = m[1]
           .toLowerCase()
@@ -469,11 +514,18 @@ export class Finder {
         const key = `${kindWord}:${id}`;
         if (seenOnPage.has(key)) continue;
         seenOnPage.add(key);
-        caps.push({ text: line, markerLen: m[0].length, kindWord, id });
+        caps.push({
+          text: line.text,
+          markerLen: m[0].length,
+          kindWord,
+          id,
+          line,
+        });
       }
 
       this.pageCaptions[pageNumber - 1] = caps;
-      this.pageText[pageNumber - 1] = lines.join("\n");
+      this.pageLines[pageNumber - 1] = lines;
+      this.pageText[pageNumber - 1] = lines.map((l) => l.text).join("\n");
     } catch {
       // skip failures — page stays empty
     }
@@ -501,42 +553,34 @@ export class Finder {
       if (this.textIndexed) {
         // Telescope `live_grep`-style: each line containing all tokens is
         // one result. Lines come from the Y-grouping in `indexPage`, so
-        // they correspond to visually distinct rows in the PDF.
+        // they correspond to visually distinct rows in the PDF and carry
+        // PDF-space geometry so we can scroll-and-flash the exact line
+        // when the user activates the hit.
         const pageHits: Array<{
           page: number;
-          lineStart: number;
+          line: LineInfo;
           match: MatchResult;
         }> = [];
-        for (let p = 0; p < this.pageText.length; p++) {
-          const text = this.pageText[p];
-          if (!text) continue;
-          const lower = text.toLowerCase();
+        for (let p = 0; p < this.pageLines.length; p++) {
+          const lines = this.pageLines[p];
+          if (!lines || lines.length === 0) continue;
           let perPageCount = 0;
-          let offset = 0;
-          // Split on \n without losing positions: step through manually.
-          while (offset <= lower.length) {
+          for (const l of lines) {
             if (perPageCount >= PER_PAGE_HIT_CAP) break;
-            const nl = lower.indexOf("\n", offset);
-            const lineEnd = nl < 0 ? lower.length : nl;
-            if (lineEnd > offset) {
-              const line = lower.slice(offset, lineEnd);
-              const m = matchQuery(line, tokens, false);
-              if (m) {
-                pageHits.push({
-                  page: p + 1,
-                  lineStart: offset,
-                  match: {
-                    positions: m.positions.map((pos) => pos + offset),
-                    bestStart: m.bestStart + offset,
-                    bestEnd: m.bestEnd + offset,
-                    score: m.score,
-                  },
-                });
-                perPageCount++;
-              }
-            }
-            if (nl < 0) break;
-            offset = nl + 1;
+            const lower = l.text.toLowerCase();
+            const m = matchQuery(lower, tokens, false);
+            if (!m) continue;
+            pageHits.push({
+              page: p + 1,
+              line: l,
+              match: {
+                positions: m.positions.map((pos) => pos + l.charStart),
+                bestStart: m.bestStart + l.charStart,
+                bestEnd: m.bestEnd + l.charStart,
+                score: m.score,
+              },
+            });
+            perPageCount++;
           }
         }
         pageHits.sort(
@@ -550,13 +594,21 @@ export class Finder {
             hit.match.bestEnd,
             hit.match.positions,
           );
+          const line = hit.line;
           entries.push({
             kind: "text",
             label: snip.text,
             page: hit.page,
             score: hit.match.score,
             matchIdx: snip.positions,
-            activate: () => this.viewer.goToPage(hit.page),
+            activate: () =>
+              this.viewer.flashScrollToLine(
+                hit.page,
+                line.xStart,
+                line.yBaseline,
+                line.xEnd - line.xStart,
+                line.height,
+              ),
             snippet: snip.text,
             pageHitStart: hit.match.bestStart,
             pageHitEnd: hit.match.bestEnd,
