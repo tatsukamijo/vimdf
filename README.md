@@ -10,6 +10,9 @@
 </p>
 
 <p align="center">
+  <a href="https://chromewebstore.google.com/detail/vimdf/ljjchallgifapclnhgoilmlijmncbahn">
+    <img src="https://img.shields.io/chrome-web-store/users/ljjchallgifapclnhgoilmlijmncbahn?style=flat-square&logo=googlechrome&logoColor=white&label=users&color=4285F4">
+  </a>
   <a href="https://developer.chrome.com/docs/extensions/mv3/intro/">
     <img src="https://img.shields.io/badge/manifest-v3-4285F4?style=flat-square&logo=googlechrome&logoColor=white">
   </a>
@@ -68,6 +71,12 @@ Press `?` inside the viewer for the full keybinding reference.
 
 ## 🚀 Installation
 
+### From the Chrome Web Store
+
+Install from the [**Chrome Web Store**](https://chromewebstore.google.com/detail/vimdf/ljjchallgifapclnhgoilmlijmncbahn).
+
+To open `file://` PDFs directly, visit `chrome://extensions`, find **VimDF**, click **Details**, and toggle **Allow access to file URLs**.
+
 ### From source (developer mode)
 
 ```bash
@@ -83,10 +92,6 @@ Then in Chrome:
 2. Enable **Developer mode** (top-right toggle)
 3. Click **Load unpacked** and select the `dist/` folder
 4. To open `file://` PDFs directly, click **Details** → toggle **Allow access to file URLs**
-
-### From the Chrome Web Store
-
-*Coming soon.*
 
 ## 💡 Usage
 
