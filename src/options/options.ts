@@ -12,6 +12,12 @@ const fields = {
   scrollStep: document.getElementById("scrollStep") as HTMLInputElement,
   hScrollStep: document.getElementById("hScrollStep") as HTMLInputElement,
   zoomStep: document.getElementById("zoomStep") as HTMLInputElement,
+  initialZoomPreset: document.getElementById(
+    "initialZoomPreset",
+  ) as HTMLSelectElement,
+  initialZoomCustom: document.getElementById(
+    "initialZoomCustom",
+  ) as HTMLInputElement,
   rememberLastPage: document.getElementById(
     "rememberLastPage",
   ) as HTMLInputElement,
@@ -27,6 +33,7 @@ const fields = {
   fullPageUpKey: document.getElementById(
     "fullPageUpKey",
   ) as HTMLInputElement,
+  accentColor: document.getElementById("accentColor") as HTMLInputElement,
   hintBg: document.getElementById("hintBg") as HTMLInputElement,
   hintFg: document.getElementById("hintFg") as HTMLInputElement,
   hintMatchedFg: document.getElementById("hintMatchedFg") as HTMLInputElement,
@@ -38,6 +45,7 @@ const fields = {
 };
 
 const colorFields: Array<{ el: HTMLInputElement; fallback: string }> = [
+  { el: fields.accentColor, fallback: "#ff5a3c" },
   { el: fields.hintBg, fallback: "#323232" },
   { el: fields.hintFg, fallback: "#f5f5f5" },
   { el: fields.hintMatchedFg, fallback: "#f97316" },
@@ -108,16 +116,51 @@ function flashStatus(msg: string): void {
   }, 1200);
 }
 
+const ZOOM_PRESETS = new Set([
+  "page-width",
+  "page-height",
+  "page-fit",
+  "page-actual",
+  "auto",
+]);
+
+/**
+ * Split the stored `initialZoom` string into UI state: the preset dropdown
+ * value ("custom" when numeric) and the percent the custom input should
+ * show (empty when on a preset).
+ */
+function splitInitialZoom(raw: string): {
+  preset: string;
+  customPercent: string;
+} {
+  const v = (raw ?? "").trim();
+  if (ZOOM_PRESETS.has(v)) return { preset: v, customPercent: "" };
+  const n = parseFloat(v);
+  if (Number.isFinite(n) && n > 0) {
+    return { preset: "custom", customPercent: String(Math.round(n * 100)) };
+  }
+  return { preset: "page-fit", customPercent: "" };
+}
+
+function applyInitialZoom(raw: string): void {
+  const { preset, customPercent } = splitInitialZoom(raw);
+  fields.initialZoomPreset.value = preset;
+  fields.initialZoomCustom.value = customPercent;
+  fields.initialZoomCustom.hidden = preset !== "custom";
+}
+
 function apply(settings: Settings): void {
   fields.theme.value = settings.theme;
   fields.scrollStep.value = String(settings.scrollStep);
   fields.hScrollStep.value = String(settings.hScrollStep);
   fields.zoomStep.value = String(settings.zoomStep);
+  applyInitialZoom(settings.initialZoom);
   fields.rememberLastPage.checked = settings.rememberLastPage;
   applyKey(fields.halfPageDownKey, settings.halfPageDownKey);
   applyKey(fields.halfPageUpKey, settings.halfPageUpKey);
   applyKey(fields.fullPageDownKey, settings.fullPageDownKey);
   applyKey(fields.fullPageUpKey, settings.fullPageUpKey);
+  applyColor(fields.accentColor, settings.accentColor, "#ff5a3c");
   applyColor(fields.hintBg, settings.hintBg, "#323232");
   applyColor(fields.hintFg, settings.hintFg, "#f5f5f5");
   applyColor(fields.hintMatchedFg, settings.hintMatchedFg, "#f97316");
@@ -153,17 +196,31 @@ function normalizeHex(s: string): string | null {
   return null;
 }
 
+function readInitialZoom(): string {
+  const preset = fields.initialZoomPreset.value;
+  if (preset !== "custom") return preset;
+  const percent = clamp(
+    parseFloat(fields.initialZoomCustom.value),
+    25,
+    400,
+    100,
+  );
+  return (percent / 100).toString();
+}
+
 function readForm(): Partial<Settings> {
   return {
     theme: fields.theme.value as Theme,
     scrollStep: clamp(parseInt(fields.scrollStep.value, 10), 10, 500, 100),
     hScrollStep: clamp(parseInt(fields.hScrollStep.value, 10), 10, 500, 80),
     zoomStep: clamp(parseFloat(fields.zoomStep.value), 1.01, 2, 1.1),
+    initialZoom: readInitialZoom(),
     rememberLastPage: fields.rememberLastPage.checked,
     halfPageDownKey: fields.halfPageDownKey.dataset.raw ?? "",
     halfPageUpKey: fields.halfPageUpKey.dataset.raw ?? "",
     fullPageDownKey: fields.fullPageDownKey.dataset.raw ?? "",
     fullPageUpKey: fields.fullPageUpKey.dataset.raw ?? "",
+    accentColor: fields.accentColor.dataset.raw ?? "",
     hintBg: fields.hintBg.dataset.raw ?? "",
     hintFg: fields.hintFg.dataset.raw ?? "",
     hintMatchedFg: fields.hintMatchedFg.dataset.raw ?? "",
@@ -199,6 +256,17 @@ for (const el of Object.values(fields)) {
     void onFieldChange();
   });
 }
+
+// Reveal / hide the custom-percent input based on the preset selection.
+// Fired in addition to the generic "change" listener above.
+fields.initialZoomPreset.addEventListener("change", () => {
+  fields.initialZoomCustom.hidden =
+    fields.initialZoomPreset.value !== "custom";
+  if (!fields.initialZoomCustom.hidden && !fields.initialZoomCustom.value) {
+    fields.initialZoomCustom.value = "100";
+    void onFieldChange();
+  }
+});
 
 document.querySelectorAll<HTMLInputElement>("input.hex").forEach((hex) => {
   const targetId = hex.dataset.target;

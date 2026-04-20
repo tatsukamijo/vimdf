@@ -41,6 +41,12 @@ GlobalWorkerOptions.workerSrc = new URL(
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 10;
 
+// Fallback flash dimensions for internal link destinations, which don't carry
+// their own extent — the PDF only tells us the target point. Matches the
+// outline-section flash so links and sections feel visually consistent.
+const LINK_FLASH_HEIGHT_PDF = 14;
+const LINK_FLASH_WIDTH_PDF = 400;
+
 export class Viewer {
   readonly container: HTMLDivElement;
   readonly viewerEl: HTMLDivElement;
@@ -131,11 +137,37 @@ export class Viewer {
           this.container.scrollTop += r.top - cr.top;
         }
       }
+      // User-initiated link jump (citation click, outline fallback,
+      // link-hint): flash the destination and center it in the viewport.
+      // Skip zoom-restoration — PDF.js calls us synthetically during zoom
+      // with allowNegativeOffset: true, and we mustn't flash or re-center
+      // that case. Letting origSPIV run above also keeps PDF.js's internal
+      // _location in sync, so subsequent zooms restore to the citation
+      // anchor instead of the pre-click position.
+      const dest = this.lastJumpDest;
+      const isZoomRestore =
+        (params as { allowNegativeOffset?: boolean } | undefined)
+          ?.allowNegativeOffset === true;
+      if (
+        params?.destArray &&
+        !isZoomRestore &&
+        dest &&
+        dest.yPdf !== null &&
+        params.pageNumber
+      ) {
+        this.flashScrollToLine(
+          params.pageNumber,
+          dest.xPdf ?? 0,
+          dest.yPdf - LINK_FLASH_HEIGHT_PDF,
+          LINK_FLASH_WIDTH_PDF,
+          LINK_FLASH_HEIGHT_PDF,
+        );
+      }
       return ret;
     };
 
     this.eventBus.on("pagesinit", () => {
-      this.pdfViewer.currentScaleValue = "page-width";
+      this.pdfViewer.currentScaleValue = this.resolveInitialZoom();
       this.updateStatus();
     });
 
@@ -276,6 +308,27 @@ export class Viewer {
   goToPage(page: number): void {
     const clamped = Math.max(1, Math.min(this.numPages, page));
     this.pdfViewer.currentPageNumber = clamped;
+  }
+
+  /**
+   * Coerce `settings.initialZoom` to something PDF.js will accept. Presets
+   * pass through; numeric strings are clamped to a sane range so a typo'd
+   * "5000" can't wreck the viewport.
+   */
+  private resolveInitialZoom(): string {
+    const raw = (this.settings.initialZoom ?? "page-fit").trim();
+    const PRESETS = new Set([
+      "page-width",
+      "page-height",
+      "page-fit",
+      "page-actual",
+      "auto",
+    ]);
+    if (PRESETS.has(raw)) return raw;
+    const n = parseFloat(raw);
+    if (!Number.isFinite(n) || n <= 0) return "page-width";
+    const clamped = Math.max(MIN_SCALE, Math.min(MAX_SCALE, n));
+    return String(clamped);
   }
 
   /**
@@ -827,10 +880,33 @@ function applyCustomStyles(s: Settings): void {
   setOrRemove("--hint-matched-fg", s.hintMatchedFg);
   setOrRemove("--statusbar-bg", s.statusBarBg);
   setOrRemove("--statusbar-fg", s.statusBarFg);
+  // Accent color feeds two CSS vars: the hex for solid uses (mode label),
+  // and a comma-separated rgb triplet for rgba() composition in the caret
+  // and selection overlays. Empty string means fall back to the :root
+  // defaults defined in viewer.css.
+  setOrRemove("--vim-accent", s.accentColor);
+  const rgb = hexToRgb(s.accentColor);
+  if (rgb) r.setProperty("--vim-accent-rgb", `${rgb.r}, ${rgb.g}, ${rgb.b}`);
+  else r.removeProperty("--vim-accent-rgb");
   const size = Number.isFinite(s.statusBarFontSize) && s.statusBarFontSize > 0
     ? s.statusBarFontSize
     : 12;
   r.setProperty("--statusbar-font-size", `${size}px`);
+}
+
+function hexToRgb(
+  hex: string,
+): { r: number; g: number; b: number } | null {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+  if (!m) return null;
+  const s = m[1].length === 3
+    ? m[1].split("").map((c) => c + c).join("")
+    : m[1];
+  return {
+    r: parseInt(s.slice(0, 2), 16),
+    g: parseInt(s.slice(2, 4), 16),
+    b: parseInt(s.slice(4, 6), 16),
+  };
 }
 
 async function main(): Promise<void> {

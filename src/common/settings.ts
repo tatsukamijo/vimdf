@@ -10,6 +10,11 @@ export interface Settings {
   scrollStep: number; // px per j/k press
   hScrollStep: number; // px per h/l press
   zoomStep: number; // multiplicative factor per +/- press
+  // Initial zoom applied on `pagesinit`. Either a PDF.js preset keyword
+  // ("page-width" / "page-height" / "page-fit" / "auto") or a decimal
+  // scale string like "1.25" (= 125%). String form matches what PDF.js
+  // expects at `pdfViewer.currentScaleValue`, so we pass it through.
+  initialZoom: string;
   rememberLastPage: boolean;
   // Optional non-modifier aliases for the Ctrl-{d,u,f,b} page-scroll commands.
   // Empty string disables the alias (only the Ctrl version works). Examples:
@@ -20,6 +25,10 @@ export interface Settings {
   fullPageDownKey: string;
   fullPageUpKey: string;
   // Optional color overrides. Empty string = use theme default.
+  // accentColor drives the caret, visual selection, status-bar mode
+  // indicator, and the color of new user highlights. Empty falls back
+  // to the built-in vivid red-orange default.
+  accentColor: string;
   hintBg: string;
   hintFg: string;
   hintMatchedFg: string;
@@ -33,11 +42,13 @@ export const DEFAULT_SETTINGS: Settings = {
   scrollStep: 100,
   hScrollStep: 80,
   zoomStep: 1.1,
+  initialZoom: "page-fit",
   rememberLastPage: true,
   halfPageDownKey: "d",
   halfPageUpKey: "u",
   fullPageDownKey: "",
   fullPageUpKey: "",
+  accentColor: "",
   hintBg: "",
   hintFg: "",
   hintMatchedFg: "",

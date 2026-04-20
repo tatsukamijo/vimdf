@@ -185,6 +185,16 @@ button:hover {
   gap: 8px;
 }
 
+.zoom-field {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.zoom-field input[type="number"] {
+  width: 80px;
+}
+
 input[type="color"] {
   width: 44px;
   height: 28px;

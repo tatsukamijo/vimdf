@@ -353,7 +353,7 @@ export class CaretMode {
     const bottom = Math.max(aR.bottom, bR.bottom);
     const pageEl = this.pageElement(a.pageIdx);
     if (!pageEl) return;
-    const pageRect = pageEl.getBoundingClientRect();
+    const pageRect = pageFrameRect(pageEl);
     const layer = document.createElement("div");
     layer.className = "vim-selection";
     for (const span of this.getPageSpans(a.pageIdx)) {
@@ -426,16 +426,27 @@ export class CaretMode {
     const spans = this.getPageSpans(pageIdx);
     if (spans.length === 0) return null;
 
+    // Drop the caret near the visual center of the viewport — landing at
+    // the top-left is disorienting when entering insert/caret mode from a
+    // scrolled-into-place reading position. Y is weighted double so we
+    // pick the right line first, then break ties with X to get a span
+    // close to the horizontal center.
     const cRect = this.viewer.container.getBoundingClientRect();
+    const targetX = (cRect.left + cRect.right) / 2;
+    const targetY = (cRect.top + cRect.bottom) / 2;
     let bestIdx = -1;
-    let bestDy = Infinity;
+    let bestDist = Infinity;
     for (let i = 0; i < spans.length; i++) {
       const r = spans[i].getBoundingClientRect();
       if (r.bottom <= cRect.top) continue;
       if (r.top >= cRect.bottom) continue;
-      const dy = Math.abs(r.top - cRect.top);
-      if (dy < bestDy) {
-        bestDy = dy;
+      const dy =
+        Math.max(0, r.top - targetY) + Math.max(0, targetY - r.bottom);
+      const dx =
+        Math.max(0, r.left - targetX) + Math.max(0, targetX - r.right);
+      const d = dy * 2 + dx;
+      if (d < bestDist) {
+        bestDist = d;
         bestIdx = i;
       }
     }
@@ -1014,10 +1025,26 @@ export class CaretMode {
     if (rects.length === 0) return;
     const hl: Highlight = {
       id: Math.random().toString(36).slice(2, 10),
-      color: "rgba(255, 230, 0, 0.4)",
+      color: this.highlightColor(),
       rects,
     };
     await this.viewer.addHighlight(hl);
+  }
+
+  // Snapshot the accent color at creation time so saved highlights remain
+  // stable even if the user later changes the accent setting.
+  private highlightColor(): string {
+    const raw = (this.viewer.settings.accentColor ?? "").trim();
+    const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(raw);
+    if (!m) return "rgba(255, 90, 60, 0.4)";
+    const s =
+      m[1].length === 3
+        ? m[1].split("").map((c) => c + c).join("")
+        : m[1];
+    const r = parseInt(s.slice(0, 2), 16);
+    const g = parseInt(s.slice(2, 4), 16);
+    const b = parseInt(s.slice(4, 6), 16);
+    return `rgba(${r}, ${g}, ${b}, 0.4)`;
   }
 
   private selectionHighlightRects(): HighlightRect[] {
@@ -1029,7 +1056,7 @@ export class CaretMode {
       const pageIdx = this.caret.pageIdx;
       const pageEl = this.pageElement(pageIdx);
       if (!pageEl) return [];
-      const pageRect = pageEl.getBoundingClientRect();
+      const refRect = this.highlightRefRect(pageEl);
       const aSpan = this.spanAt(this.anchor);
       const bSpan = this.spanAt(this.caret);
       if (!aSpan || !bSpan) return [];
@@ -1050,10 +1077,10 @@ export class CaretMode {
         if (or <= ol || ob <= ot) continue;
         out.push({
           pageIndex: pageIdx,
-          x: (ol - pageRect.left) / pageRect.width,
-          y: (ot - pageRect.top) / pageRect.height,
-          w: (or - ol) / pageRect.width,
-          h: (ob - ot) / pageRect.height,
+          x: (ol - refRect.left) / refRect.width,
+          y: (ot - refRect.top) / refRect.height,
+          w: (or - ol) / refRect.width,
+          h: (ob - ot) / refRect.height,
         });
       }
       return out;
@@ -1067,7 +1094,7 @@ export class CaretMode {
     for (let p = s.pageIdx; p <= end.pageIdx; p++) {
       const pageEl = this.pageElement(p);
       if (!pageEl) continue;
-      const pageRect = pageEl.getBoundingClientRect();
+      const refRect = this.highlightRefRect(pageEl);
       const spans = this.getPageSpans(p);
       const from = p === s.pageIdx ? s.spanIdx : 0;
       const to = p === end.pageIdx ? end.spanIdx : spans.length - 1;
@@ -1085,14 +1112,18 @@ export class CaretMode {
         if (!rect) continue;
         out.push({
           pageIndex: p,
-          x: (rect.left - pageRect.left) / pageRect.width,
-          y: (rect.top - pageRect.top) / pageRect.height,
-          w: rect.width / pageRect.width,
-          h: rect.height / pageRect.height,
+          x: (rect.left - refRect.left) / refRect.width,
+          y: (rect.top - refRect.top) / refRect.height,
+          w: rect.width / refRect.width,
+          h: rect.height / refRect.height,
         });
       }
     }
     return out;
+  }
+
+  private highlightRefRect(pageEl: HTMLElement): DOMRect {
+    return pageFrameRect(pageEl);
   }
 }
 
@@ -1138,7 +1169,7 @@ function rectToBox(
   pageEl: HTMLElement,
   className: string,
 ): HTMLElement {
-  const pageRect = pageEl.getBoundingClientRect();
+  const pageRect = pageFrameRect(pageEl);
   const box = document.createElement("div");
   box.className = className;
   box.style.position = "absolute";
@@ -1147,4 +1178,18 @@ function rectToBox(
   box.style.width = `${(r.width / pageRect.width) * 100}%`;
   box.style.height = `${(r.height / pageRect.height) * 100}%`;
   return box;
+}
+
+/**
+ * Reference frame for converting viewport rects → page-relative percentages.
+ * Overlays are appended as `position: absolute` children of `.page`, so their
+ * `%` sizes resolve against `.page`'s padding-box (inside its 1px border).
+ * `.page.getBoundingClientRect()` returns the *border-box* — using it would
+ * drift ~1px per edge, amplified by zoom and visible on wide figures.
+ * `.textLayer` sits at `inset: 0` inside `.page`, sharing the padding-box
+ * frame, so it's a reliable proxy.
+ */
+function pageFrameRect(pageEl: HTMLElement): DOMRect {
+  const textLayer = pageEl.querySelector(".textLayer") as HTMLElement | null;
+  return (textLayer ?? pageEl).getBoundingClientRect();
 }

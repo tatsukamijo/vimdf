@@ -63,6 +63,31 @@
             step="0.01"
           />
         </label>
+        <label class="row">
+          <span>
+            Initial zoom
+            <small>applied when a PDF first opens</small>
+          </span>
+          <div class="zoom-field">
+            <select id="initialZoomPreset">
+              <option value="page-width">Fit width</option>
+              <option value="page-height">Fit height</option>
+              <option value="page-fit">Fit page</option>
+              <option value="page-actual">Actual size (100%)</option>
+              <option value="auto">Auto</option>
+              <option value="custom">Custom…</option>
+            </select>
+            <input
+              type="number"
+              id="initialZoomCustom"
+              min="25"
+              max="400"
+              step="5"
+              placeholder="%"
+              hidden
+            />
+          </div>
+        </label>
       </section>
 
       <section>
@@ -103,6 +128,23 @@
             <small>default: none (Ctrl-b)</small>
           </span>
           <input type="text" class="keycap" id="fullPageUpKey" readonly />
+        </label>
+      </section>
+
+      <section>
+        <h2>Caret &amp; selection</h2>
+        <p class="hint" style="margin-top: 0">
+          Color used for the caret, visual selection, new highlights, and
+          the status-bar mode label (<code>NORMAL</code>, <code>VISUAL</code>,
+          etc). Existing highlights keep their original color.
+        </p>
+        <label class="row">
+          <span>Accent color</span>
+          <div class="color-field">
+            <input type="color" id="accentColor" />
+            <input type="text" class="hex" data-target="accentColor" spellcheck="false" placeholder="#ff5a3c" />
+            <button type="button" class="clear" data-target="accentColor">Reset</button>
+          </div>
         </label>
       </section>
 

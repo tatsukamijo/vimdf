@@ -10,6 +10,12 @@ body.theme-dark {
   --page-shadow: rgba(0, 0, 0, 0.5);
   --match-bg: rgba(255, 200, 0, 0.4);
   --match-selected-bg: rgba(255, 140, 0, 0.75);
+  /* vivid red-orange — drives caret, visual selection, mode indicator,
+     and the default color of new user highlights. Overridable from
+     options (settings.accentColor); applyCustomStyles() also emits
+     --vim-accent-rgb for alpha composition in rgba(). */
+  --vim-accent: #ff5a3c;
+  --vim-accent-rgb: 255, 90, 60;
 }
 
 body.theme-light {
@@ -203,8 +209,8 @@ body.sidebar-open #viewerContainer {
 
 /* Vim caret + visual selection overlays */
 .vim-caret {
-  background: rgba(100, 180, 255, 0.25);
-  outline: 1.5px solid rgba(100, 180, 255, 0.9);
+  background: rgba(var(--vim-accent-rgb), 0.25);
+  outline: 1.5px solid rgba(var(--vim-accent-rgb), 0.9);
   pointer-events: none;
   z-index: 5;
   border-radius: 2px;
@@ -224,13 +230,27 @@ body.sidebar-open #viewerContainer {
 }
 
 .vim-selection-box {
-  background: rgba(100, 180, 255, 0.35);
+  background: rgba(var(--vim-accent-rgb), 0.35);
   mix-blend-mode: multiply;
   border-radius: 2px;
 }
 
+/* Override Chrome's default light-blue text selection so mouse drag-select
+   in the PDF text layer matches the vim visual selection color. PDF.js
+   ships its own `.textLayer ::selection` rule, so we need a matching
+   selector to actually take effect — imported after pdf_viewer.css in
+   viewer.ts so same-specificity rules here win. */
+::selection {
+  background: rgba(var(--vim-accent-rgb), 0.35);
+}
+
+.textLayer ::selection,
+.textLayer br::selection {
+  background: rgba(var(--vim-accent-rgb), 0.35);
+}
+
 #modeIndicator {
-  color: var(--accent);
+  color: var(--vim-accent);
   font-weight: bold;
   letter-spacing: 0.08em;
   margin-left: 16px;
@@ -282,42 +302,24 @@ body.sidebar-open #viewerContainer {
 }
 
 /* Flash overlay briefly drawn on top of a line after jumping from the
-   finder to a text hit — gives the reader an immediate "here it is" cue
-   instead of dropping them at page-top with nothing to orient on. */
+   finder / outline / citation link — gives the reader an immediate
+   "here it is" cue. Shares the --vim-accent color so caret, selection,
+   highlights, and this flash all look unified. */
 .vimdf-finder-flash {
   position: absolute;
   pointer-events: none;
   z-index: 80;
-  background: rgba(255, 213, 79, 0.55);
-  box-shadow: 0 0 0 2px rgba(255, 213, 79, 0.85);
+  background: rgba(var(--vim-accent-rgb), 0.22);
+  border-left: 2px solid var(--vim-accent);
   border-radius: 2px;
-  animation: vimdf-finder-flash 1.8s ease-out forwards;
+  animation: vimdf-finder-flash 1.1s ease-out forwards;
 }
 
 @keyframes vimdf-finder-flash {
-  0% {
-    opacity: 0;
-    transform: scale(1.15);
-  }
-  10% {
-    opacity: 1;
-    transform: scale(1);
-  }
-  60% {
-    opacity: 1;
-  }
-  100% {
-    opacity: 0;
-    background: rgba(255, 213, 79, 0);
-    box-shadow: 0 0 0 2px rgba(255, 213, 79, 0);
-  }
-}
-
-@media (prefers-color-scheme: dark) {
-  .vimdf-finder-flash {
-    background: rgba(255, 193, 7, 0.35);
-    box-shadow: 0 0 0 2px rgba(255, 193, 7, 0.7);
-  }
+  0%   { opacity: 0; }
+  12%  { opacity: 1; }
+  70%  { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* Finder overlay (Telescope-style fuzzy picker) */
