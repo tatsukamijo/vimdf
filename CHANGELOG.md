@@ -5,6 +5,19 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.0] - 2026-05-03
+
+### Added
+- **Vimium-compatible tab navigation**: Vimium can't bind keys on Chrome's PDF viewer, so Vimium users had to drop back to `Ctrl+Tab` for tab moves while reading a PDF. VimDF now covers that gap with Vimium's tab keys (Web Store review feedback)
+  - `J` / `K` — previous / next tab
+  - `g0` / `g$` — first / last tab
+  - `t` — new tab
+  - `x` — close current tab
+  - Intentionally **not** bound: `gt` / `gT` (would conflict with `T` for the fuzzy finder); `^`, `X`, `yt`, `<a-p>`, `W` (low-frequency or require extra permissions like `sessions`)
+
+### Changed
+- **Permissions**: Added `tabs` to `manifest.json` (required for `chrome.tabs.*` from the service worker)
+
 ## [0.2.0] - 2026-04-19
 
 ### Added

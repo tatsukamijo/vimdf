@@ -288,7 +288,9 @@ export class VimController {
       return;
     }
 
-    // gg sequence
+    // g{g,0,$} sequences. `g0`/`g$` jump to first/last tab (Vimium parity);
+    // `gt`/`gT` are intentionally NOT bound because `T` is already the fuzzy
+    // finder — `J`/`K` cover next/prev tab without that ambiguity.
     if (this.pendingG) {
       this.pendingG = false;
       if (key === "g") {
@@ -296,7 +298,17 @@ export class VimController {
         this.viewer.goToPage(1);
         return;
       }
-      // fall through — g was not followed by g
+      if (key === "0") {
+        e.preventDefault();
+        this.sendTabCommand("first");
+        return;
+      }
+      if (key === "$") {
+        e.preventDefault();
+        this.sendTabCommand("last");
+        return;
+      }
+      // fall through — g was not followed by a recognised key
     }
 
     // Count prefix for {n}G
@@ -416,6 +428,23 @@ export class VimController {
       case "T":
         e.preventDefault();
         this.openFinder();
+        return;
+
+      case "J":
+        e.preventDefault();
+        this.sendTabCommand("prev");
+        return;
+      case "K":
+        e.preventDefault();
+        this.sendTabCommand("next");
+        return;
+      case "t":
+        e.preventDefault();
+        this.sendTabCommand("new");
+        return;
+      case "x":
+        e.preventDefault();
+        this.sendTabCommand("close");
         return;
 
       case "o":
@@ -562,6 +591,12 @@ export class VimController {
       return;
     }
     this.restore(next);
+  }
+
+  private sendTabCommand(
+    action: "next" | "prev" | "first" | "last" | "new" | "close",
+  ): void {
+    void chrome.runtime.sendMessage({ type: "vimdf.tab", action });
   }
 
   private isInternalLink(link: HTMLAnchorElement): boolean {

@@ -1,0 +1,127 @@
+name: Release
+
+# Auto-release on `package.json` version bump.
+#
+# Trigger: any push to main that touches package.json. The job reads the
+# current version, and skips if `v<version>` is already tagged — so package
+# edits that don't bump the version (or re-runs after a successful release)
+# are no-ops. This means the release flow is:
+#
+#   1. Edit package.json + vite.config.ts (version) and CHANGELOG.md on a branch
+#   2. PR → review → merge to main
+#   3. This workflow builds, zips, uploads to Chrome Web Store as a draft,
+#      tags the commit, and creates a GitHub Release with the .zip attached
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   EXTENSION_ID         — Chrome Web Store extension ID (the long string in the listing URL)
+#   CWS_CLIENT_ID        — Google OAuth2 client ID (Desktop type, from GCP console)
+#   CWS_CLIENT_SECRET    — Google OAuth2 client secret
+#   CWS_REFRESH_TOKEN    — refresh token with `chromewebstore` scope
+#                          (run `npx chrome-webstore-upload-keys` locally once to mint one)
+#
+# Note: this uploads as a *draft*. Chrome Web Store still requires manual
+# publish from the developer dashboard (and a review pass). To auto-publish
+# on upload, swap the upload step for `chrome-webstore-upload-cli publish`
+# or pass `--auto-publish` — but be aware permission changes (e.g. adding
+# `tabs`) trigger longer review and publishing on green is risky.
+
+on:
+  push:
+    branches: [main]
+    paths: ['package.json']
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write  # tag + release creation
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # need full history to check existing tags
+
+      - name: Read version
+        id: ver
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          if git rev-parse "v$VERSION" >/dev/null 2>&1; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::v$VERSION already tagged — skipping release."
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Releasing v$VERSION."
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.ver.outputs.exists == 'false'
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        if: steps.ver.outputs.exists == 'false'
+        run: npm ci
+
+      - name: Build
+        if: steps.ver.outputs.exists == 'false'
+        run: npm run build
+
+      - name: Verify manifest version matches
+        if: steps.ver.outputs.exists == 'false'
+        env:
+          EXPECTED: ${{ steps.ver.outputs.version }}
+        run: |
+          ACTUAL=$(node -p "require('./dist/manifest.json').version")
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::manifest.json version ($ACTUAL) does not match package.json ($EXPECTED). Bump vite.config.ts too."
+            exit 1
+          fi
+
+      - name: Package
+        if: steps.ver.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          cd dist
+          zip -r "../vimdf-$VERSION.zip" .
+
+      - name: Upload to Chrome Web Store (draft)
+        if: steps.ver.outputs.exists == 'false'
+        env:
+          VERSION: ${{ steps.ver.outputs.version }}
+          EXTENSION_ID: ${{ secrets.EXTENSION_ID }}
+          CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+        run: |
+          npx --yes chrome-webstore-upload-cli@3 upload \
+            --source "vimdf-$VERSION.zip" \
+            --extension-id "$EXTENSION_ID"
+
+      - name: Tag commit and create GitHub Release
+        if: steps.ver.outputs.exists == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          git tag "v$VERSION"
+          git push origin "v$VERSION"
+          # Pull this version's section out of CHANGELOG.md for the release notes.
+          NOTES=$(awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md)
+          if [ -z "$NOTES" ]; then
+            NOTES="See CHANGELOG.md."
+          fi
+          gh release create "v$VERSION" \
+            --title "v$VERSION" \
+            --notes "$NOTES" \
+            "vimdf-$VERSION.zip"

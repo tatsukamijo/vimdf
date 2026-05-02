@@ -92,4 +92,50 @@ chrome.runtime.onStartup.addListener(() => {
   void ensureRedirectRules();
 });
 
+// Vimium-compatible tab commands. Vimium itself can't bind keys on Chrome's
+// PDF viewer, and our content script runs there but can't call chrome.tabs.*
+// directly — so the viewer sends an action here and we drive the tab API.
+type TabAction = "next" | "prev" | "first" | "last" | "new" | "close";
+
+async function runTabAction(action: TabAction): Promise<void> {
+  const tabs = await chrome.tabs.query({ currentWindow: true });
+  if (tabs.length === 0) return;
+  const sorted = tabs.slice().sort((a, b) => a.index - b.index);
+  const activeIdx = sorted.findIndex((t) => t.active);
+
+  const activate = async (idx: number): Promise<void> => {
+    const t = sorted[idx];
+    if (t?.id != null) await chrome.tabs.update(t.id, { active: true });
+  };
+
+  switch (action) {
+    case "next":
+      await activate((activeIdx + 1) % sorted.length);
+      return;
+    case "prev":
+      await activate((activeIdx - 1 + sorted.length) % sorted.length);
+      return;
+    case "first":
+      await activate(0);
+      return;
+    case "last":
+      await activate(sorted.length - 1);
+      return;
+    case "new":
+      await chrome.tabs.create({});
+      return;
+    case "close":
+      if (activeIdx >= 0 && sorted[activeIdx].id != null) {
+        await chrome.tabs.remove(sorted[activeIdx].id!);
+      }
+      return;
+  }
+}
+
+chrome.runtime.onMessage.addListener((msg) => {
+  if (msg && typeof msg === "object" && msg.type === "vimdf.tab") {
+    void runTabAction(msg.action as TabAction);
+  }
+});
+
 export {};
