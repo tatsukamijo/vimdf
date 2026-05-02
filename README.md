@@ -34,6 +34,7 @@ VimDF replaces Chrome's built-in PDF viewer with a modal, keyboard-driven one. I
 ## ✨ Features
 
 - **Vim-style navigation** — `j`/`k`/`h`/`l`, `gg`/`G`/`{n}G`, `Ctrl-d`/`Ctrl-u`/`Ctrl-f`/`Ctrl-b`
+- **Tab navigation** (Vimium-compatible) — `J`/`K` previous/next tab, `g0`/`g$` first/last, `t` new tab, `x` close. Fills the gap left by Vimium not being able to bind keys on Chrome's PDF viewer
 - **Search** — `/` to query, `n`/`N` to cycle matches
 - **Fuzzy finder** (`T`) — Telescope-style picker across outline, figure/table captions, marks, highlights, and full text. Live preview with page thumbnail and highlighted snippet
 
