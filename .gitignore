@@ -19,3 +19,6 @@ coverage
 # os / editor
 .DS_Store
 *.log
+
+# claude
+.claude/
