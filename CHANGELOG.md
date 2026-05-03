@@ -5,6 +5,12 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.3.1] - 2026-05-03
+
+### Fixed
+- **Notion (and other multi-param signed URLs) failed with HTTP 400**: clicking a PDF attachment in a Notion page surfaced `UnexpectedResponseException: Unexpected server response (400)`. The DNR redirect builds `viewer.html?file=<original-url>` by splicing the matched URL in verbatim (no percent-encoding), and the viewer was reading that back with `URLSearchParams.get("file")` — which silently truncates at the first `&` inside the URL. Notion's signed URL carries `?table=…&id=…&spaceId=…&userId=…&cache=v2` and 400s when those are missing. The viewer now grabs the raw tail of `location.search` after `?file=` so the full URL reaches PDF.js intact. Same fix unblocks any other signed URL that uses multiple query params (Drive previews, S3 with extra params, etc.)
+- **Cookie-authenticated PDF fetches**: `withCredentials` was hard-coded `false`, so `getDocument` made anonymous cross-origin requests and any URL behind a session check (Notion attachments, Drive previews) failed. Now `true`, so cookies for the destination domain ride along on the fetch. Anonymous PDFs are unaffected — `withCredentials` only controls whether credentials are sent, not whether they're required
+
 ## [0.3.0] - 2026-05-03
 
 ### Added

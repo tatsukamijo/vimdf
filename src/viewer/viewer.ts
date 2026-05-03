@@ -207,7 +207,12 @@ export class Viewer {
       url,
       cMapUrl: chrome.runtime.getURL("cmaps/"),
       cMapPacked: true,
-      withCredentials: false,
+      // Forward cookies on the cross-origin fetch so cookie-authenticated
+      // signed URLs work (Notion attachments, Drive previews, etc). Without
+      // this the request goes out anonymously and gets a 4xx from anything
+      // behind a session check. Safe for unauthenticated PDFs too — just
+      // sets the credentials mode on the underlying fetch.
+      withCredentials: true,
     });
     this.pdfDocument = await loadingTask.promise;
     this.pdfViewer.setDocument(this.pdfDocument);
@@ -910,8 +915,16 @@ function hexToRgb(
 }
 
 async function main(): Promise<void> {
-  const params = new URLSearchParams(location.search);
-  const file = params.get("file");
+  // The DNR redirect builds `?file=<original-url>` with the original URL
+  // pasted in verbatim — no percent-encoding of its `?`, `&`, or `=` —
+  // because declarativeNetRequest's `\0` substitution doesn't re-encode.
+  // URLSearchParams would then split on the first `&` inside that URL
+  // and silently truncate everything after it (e.g. Notion's signed
+  // attachment URLs carry `?table=block&id=…&spaceId=…&userId=…&cache=v2`
+  // and lose all but `table`, returning HTTP 400). Grab the value as the
+  // raw tail of the search string instead.
+  const m = location.search.match(/^\?file=(.*)$/);
+  const file = m ? m[1] : null;
   if (!file) {
     document.getElementById("statusLeft")!.textContent =
       "No file specified. Use ?file=<url>";
