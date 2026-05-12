@@ -5,7 +5,7 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [0.3.2] - 2026-05-03
+## [0.3.2] - 2026-05-12
 
 ### Fixed
 - **Embedded images stopped rendering on many PDFs**: page backgrounds and vector boxes drew fine but raster figures (JBIG2 / JPEG2000 / OpenJPEG) came up blank, with `Warning: Dependent image isn't ready yet` flooding the console. Root cause: PDF.js 4.x compiles its image decoders as WebAssembly modules, and MV3's default CSP (`script-src 'self'`) blocks WASM compilation in extension pages. Added `'wasm-unsafe-eval'` to `content_security_policy.extension_pages` — the MV3-sanctioned keyword that allows WASM but not `eval()`, so the Web Store policy stays clean
