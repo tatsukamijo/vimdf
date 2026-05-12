@@ -1,6 +1,6 @@
 {
   "name": "vimdf",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "Navigate PDFs with Vim keybindings",
   "author": "Tatsuya Kamijo <tatsukamijo@icloud.com>",

@@ -5,11 +5,20 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 const manifest = defineManifest({
   manifest_version: 3,
   name: "VimDF",
-  version: "0.3.1",
+  version: "0.3.2",
   description: "Navigate PDFs with Vim keybindings",
   author: { email: "tatsukamijo@icloud.com" },
   permissions: ["declarativeNetRequest", "storage", "downloads", "tabs"],
   host_permissions: ["<all_urls>"],
+  // PDF.js 4.x decodes JBIG2 / JPEG2000 / OpenJPEG images via WebAssembly
+  // modules. MV3's default CSP (`script-src 'self'`) blocks WASM compilation,
+  // so images go missing while page background boxes render fine ("Dependent
+  // image isn't ready yet" floods the console). `wasm-unsafe-eval` is the
+  // MV3-sanctioned keyword that allows WASM but not eval(); it does not
+  // trigger extra Web Store review.
+  content_security_policy: {
+    extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self';",
+  },
   background: {
     service_worker: "src/background/service-worker.ts",
     type: "module",
