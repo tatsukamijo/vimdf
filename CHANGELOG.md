@@ -5,6 +5,12 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-05-16
+
+### Added
+- **Vimium-compatible browser history navigation**: `H` goes back, `L` goes forward in the active tab's history. Rounds out the Vimium-on-PDFs story started in 0.3.0 — Vimium itself can't bind these keys on Chrome's PDF viewer, so VimDF now mirrors them. Driven via `chrome.tabs.goBack` / `goForward` in the service worker; history-edge errors are swallowed so pressing `H` at the start of history is a silent no-op
+  - Caret-mode `H` (save selection as highlight) is unaffected — caret mode handles its own keys before the normal-mode switch sees them
+
 ## [0.3.2] - 2026-05-12
 
 ### Fixed

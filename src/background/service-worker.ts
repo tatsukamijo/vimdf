@@ -95,7 +95,15 @@ chrome.runtime.onStartup.addListener(() => {
 // Vimium-compatible tab commands. Vimium itself can't bind keys on Chrome's
 // PDF viewer, and our content script runs there but can't call chrome.tabs.*
 // directly — so the viewer sends an action here and we drive the tab API.
-type TabAction = "next" | "prev" | "first" | "last" | "new" | "close";
+type TabAction =
+  | "next"
+  | "prev"
+  | "first"
+  | "last"
+  | "new"
+  | "close"
+  | "back"
+  | "forward";
 
 async function runTabAction(action: TabAction): Promise<void> {
   const tabs = await chrome.tabs.query({ currentWindow: true });
@@ -129,6 +137,20 @@ async function runTabAction(action: TabAction): Promise<void> {
         await chrome.tabs.remove(sorted[activeIdx].id!);
       }
       return;
+    case "back":
+    case "forward": {
+      // chrome.tabs.goBack/goForward throws on an empty history stack; swallow
+      // so VimDF stays silent at the edges instead of surfacing a runtime error.
+      const id = sorted[activeIdx]?.id;
+      if (id == null) return;
+      try {
+        if (action === "back") await chrome.tabs.goBack(id);
+        else await chrome.tabs.goForward(id);
+      } catch {
+        // no-op: nothing to go back/forward to
+      }
+      return;
+    }
   }
 }
 

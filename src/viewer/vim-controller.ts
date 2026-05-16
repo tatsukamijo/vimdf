@@ -438,6 +438,14 @@ export class VimController {
         e.preventDefault();
         this.sendTabCommand("next");
         return;
+      case "H":
+        e.preventDefault();
+        this.sendTabCommand("back");
+        return;
+      case "L":
+        e.preventDefault();
+        this.sendTabCommand("forward");
+        return;
       case "t":
         e.preventDefault();
         this.sendTabCommand("new");
@@ -594,7 +602,15 @@ export class VimController {
   }
 
   private sendTabCommand(
-    action: "next" | "prev" | "first" | "last" | "new" | "close",
+    action:
+      | "next"
+      | "prev"
+      | "first"
+      | "last"
+      | "new"
+      | "close"
+      | "back"
+      | "forward",
   ): void {
     void chrome.runtime.sendMessage({ type: "vimdf.tab", action });
   }
