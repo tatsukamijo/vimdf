@@ -96,7 +96,7 @@ Then in Chrome:
 
 ## 💡 Usage
 
-Once installed, any `.pdf` URL you navigate to — over `http(s)`, extension pages, or `file://` (with file access allowed) — is automatically handled by VimDF. Press `?` to see all keybindings.
+Once installed, any PDF you open — over `http(s)` or `file://` (with file access allowed) — is automatically handled by VimDF. It catches PDFs whether they open as their own tab or are embedded in a page's `<iframe>` (e.g. a live-preview server), and whether or not the URL ends in `.pdf` (it also inspects the response `Content-Type`). Press `?` to see all keybindings.
 
 Settings live in the extension's Options page (right-click the toolbar icon → Options). Theme, scroll steps, zoom step, page-scroll aliases, link-hint colors, status-bar colors, and per-document last-page persistence are all configurable and sync across Chrome profiles.
 

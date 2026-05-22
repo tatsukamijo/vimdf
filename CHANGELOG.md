@@ -5,6 +5,22 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.1] - 2026-05-23
+
+### Changed
+- **VimDF now also takes over PDFs that aren't plain top-level `.pdf` tabs.**
+  Two cases that previously fell through to Chrome's built-in viewer:
+  - **PDFs embedded in an `<iframe>`** — e.g. a live-preview server whose page
+    is a thin HTML shell around `<iframe src="paper.pdf">`. The
+    declarativeNetRequest rules were scoped to `MAIN_FRAME` only; they now also
+    match `SUB_FRAME`
+  - **PDFs served at extensionless URLs** — a new catch-all rule redirects any
+    main- or sub-frame navigation whose response carries
+    `Content-Type: application/pdf`, regardless of how the URL looks (local dev
+    servers, object-store keys, endpoints that stream a PDF). Uses a
+    `responseHeaders` rule condition (Chrome 128+), falling back to the
+    URL-pattern rules on older Chrome
+
 ## [0.4.0] - 2026-05-16
 
 ### Added
