@@ -5,11 +5,20 @@
 // because the redirect target must include the extension ID, which is only
 // known at install time.
 
-// PDF URL patterns we redirect to the viewer.
+// A `responseHeaders` rule condition (Chrome 128+). Not in @types/chrome
+// 0.0.270 yet, so we model the slice of HeaderInfo we actually use.
+interface ResponseHeaderMatch {
+  header: string;
+  values?: string[];
+}
+
+// PDF patterns we redirect to the viewer.
 //
-// Each rule is (regexFilter, fileRef). The filter picks what to match; the
-// fileRef is what we pass as the `file=` parameter to our viewer, using
-// declarativeNetRequest backrefs (`\0`, `\1`, ...) against the filter.
+// Each rule is (regexFilter, fileRef[, responseHeaders]). The filter picks
+// what to match; the fileRef is what we pass as the `file=` parameter to our
+// viewer, using declarativeNetRequest backrefs (`\0`, `\1`, ...) against the
+// filter. A rule that also sets `responseHeaders` only fires when the
+// response carries a matching header — used to catch PDFs by Content-Type.
 //
 // For publishers whose "nice" viewer URL and the raw PDF differ only by a
 // path segment (e.g. Science's /doi/epdf/ wrapper vs /doi/pdf/), we match
@@ -18,6 +27,7 @@
 const REDIRECT_RULES: ReadonlyArray<{
   regexFilter: string;
   fileRef: string;
+  responseHeaders?: ResponseHeaderMatch[];
 }> = [
   // Any URL ending in .pdf (covers nature.com/articles/*.pdf, direct links).
   { regexFilter: "^https?://.*\\.pdf(\\?.*)?$", fileRef: "\\0" },
@@ -45,6 +55,27 @@ const REDIRECT_RULES: ReadonlyArray<{
     regexFilter: "^https?://dl\\.acm\\.org/doi/pdf/.+$",
     fileRef: "\\0",
   },
+  // Catch-all by Content-Type. The rules above only match URLs that *look*
+  // like PDFs (a `.pdf` suffix, or a known publisher path); this one matches
+  // any top-level navigation the server answers with `Content-Type:
+  // application/pdf`, whatever the URL looks like. That covers PDFs served at
+  // extensionless routes — local dev servers (VS Code Live Server, `python
+  // -m http.server`), object-store keys, API endpoints that stream a PDF.
+  //
+  // `responseHeaders` conditions match at the onHeadersReceived stage
+  // (Chrome 128+), so the request reaches the server once before the
+  // redirect fires — one extra fetch versus the URL rules above, which is
+  // why those stay first as the fast path for the common `.pdf` case.
+  {
+    regexFilter: "^https?://.+",
+    fileRef: "\\0",
+    responseHeaders: [
+      {
+        header: "content-type",
+        values: ["application/pdf*", "application/x-pdf*"],
+      },
+    ],
+  },
   // Local files.
   { regexFilter: "^file://.*\\.pdf$", fileRef: "\\0" },
 ];
@@ -55,25 +86,61 @@ async function ensureRedirectRules(): Promise<void> {
   const existing = await chrome.declarativeNetRequest.getDynamicRules();
   const removeRuleIds = existing.map((r) => r.id);
 
-  const addRules = REDIRECT_RULES.map((rule, idx) => ({
-    id: idx + 1,
-    priority: 1,
-    action: {
-      type: chrome.declarativeNetRequest.RuleActionType.REDIRECT,
-      redirect: {
-        regexSubstitution: `${viewerUrl}?file=${rule.fileRef}`,
-      },
-    },
-    condition: {
-      regexFilter: rule.regexFilter,
-      resourceTypes: [chrome.declarativeNetRequest.ResourceType.MAIN_FRAME],
-    },
-  }));
+  const toDnrRules = (
+    rules: ReadonlyArray<(typeof REDIRECT_RULES)[number]>,
+  ): chrome.declarativeNetRequest.Rule[] =>
+    rules.map((rule, idx) => {
+      const condition: chrome.declarativeNetRequest.RuleCondition = {
+        regexFilter: rule.regexFilter,
+        // MAIN_FRAME: a PDF opened as its own tab. SUB_FRAME: a PDF embedded
+        // in an <iframe> — e.g. a LaTeX live-preview server whose page is a
+        // thin HTML shell around `<iframe src="paper.pdf">`. Without
+        // SUB_FRAME those never reach VimDF: the rule only ever saw the
+        // (HTML) main frame, so the iframe kept Chrome's built-in viewer.
+        resourceTypes: [
+          chrome.declarativeNetRequest.ResourceType.MAIN_FRAME,
+          chrome.declarativeNetRequest.ResourceType.SUB_FRAME,
+        ],
+      };
+      if (rule.responseHeaders) {
+        // `responseHeaders` isn't in @types/chrome 0.0.270 yet — attach it
+        // through a cast so the runtime still receives the condition.
+        (condition as { responseHeaders?: ResponseHeaderMatch[] })
+          .responseHeaders = rule.responseHeaders;
+      }
+      return {
+        id: idx + 1,
+        priority: 1,
+        action: {
+          type: chrome.declarativeNetRequest.RuleActionType.REDIRECT,
+          redirect: {
+            regexSubstitution: `${viewerUrl}?file=${rule.fileRef}`,
+          },
+        },
+        condition,
+      };
+    });
 
-  await chrome.declarativeNetRequest.updateDynamicRules({
-    removeRuleIds,
-    addRules,
-  });
+  try {
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds,
+      addRules: toDnrRules(REDIRECT_RULES),
+    });
+  } catch (err) {
+    // A `responseHeaders` condition needs Chrome 128+. On older Chrome the
+    // whole batch is rejected (updateDynamicRules is atomic and leaves the
+    // rule set untouched on failure), so retry with just the URL-pattern
+    // rules — core `.pdf` interception keeps working.
+    console.warn(
+      "VimDF: rule set with responseHeaders rejected; " +
+        "retrying with URL-only rules:",
+      err,
+    );
+    await chrome.declarativeNetRequest.updateDynamicRules({
+      removeRuleIds,
+      addRules: toDnrRules(REDIRECT_RULES.filter((r) => !r.responseHeaders)),
+    });
+  }
 }
 
 chrome.runtime.onInstalled.addListener((details) => {

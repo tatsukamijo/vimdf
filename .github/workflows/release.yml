@@ -9,8 +9,9 @@ name: Release
 #
 #   1. Edit package.json + vite.config.ts (version) and CHANGELOG.md on a branch
 #   2. PR → review → merge to main
-#   3. This workflow builds, zips, uploads to Chrome Web Store as a draft,
-#      tags the commit, and creates a GitHub Release with the .zip attached
+#   3. This workflow builds, zips, uploads to the Chrome Web Store and
+#      submits it for publishing (auto-publishes once review passes), tags
+#      the commit, and creates a GitHub Release with the .zip attached
 #
 # Required repo secrets (Settings → Secrets and variables → Actions):
 #   EXTENSION_ID         — Chrome Web Store extension ID (the long string in the listing URL)
@@ -19,11 +20,12 @@ name: Release
 #   CWS_REFRESH_TOKEN    — refresh token with `chromewebstore` scope
 #                          (run `npx chrome-webstore-upload-keys` locally once to mint one)
 #
-# Note: this uploads as a *draft*. Chrome Web Store still requires manual
-# publish from the developer dashboard (and a review pass). To auto-publish
-# on upload, swap the upload step for `chrome-webstore-upload-cli publish`
-# or pass `--auto-publish` — but be aware permission changes (e.g. adding
-# `tabs`) trigger longer review and publishing on green is risky.
+# Note: this uploads *and* publishes (`--auto-publish`) — the new version
+# goes to Chrome Web Store review and auto-publishes once it passes, with no
+# manual dashboard step. Review still gates go-live, and permission changes
+# (e.g. adding `tabs`) lengthen it. To restore a manual publish gate, drop
+# `--auto-publish` from the upload step: the upload then lands as a draft
+# you submit yourself from the developer dashboard.
 
 on:
   push:
@@ -91,7 +93,7 @@ jobs:
           cd dist
           zip -r "../vimdf-$VERSION.zip" .
 
-      - name: Upload to Chrome Web Store (draft)
+      - name: Upload & publish to Chrome Web Store
         if: steps.ver.outputs.exists == 'false'
         env:
           VERSION: ${{ steps.ver.outputs.version }}
@@ -102,7 +104,8 @@ jobs:
         run: |
           npx --yes chrome-webstore-upload-cli@3 upload \
             --source "vimdf-$VERSION.zip" \
-            --extension-id "$EXTENSION_ID"
+            --extension-id "$EXTENSION_ID" \
+            --auto-publish
 
       - name: Tag commit and create GitHub Release
         if: steps.ver.outputs.exists == 'false'
