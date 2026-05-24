@@ -5,6 +5,29 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.2] - 2026-05-23
+
+### Changed
+- **Livereload-friendly position preservation.** When a PDF is regenerated
+  and re-opened with a cache-busted query (`paper.pdf?t=...`, common for
+  LaTeX watchers / live-preview servers), VimDF now treats it as the same
+  document. The page-state storage key strips well-known cache-bust params
+  (`t`, `_`, `v`, `cb`, `ts`, `r`) and the URL fragment, and the persisted
+  state now includes within-page `scrollTop` in addition to page number —
+  so a recompile no longer jumps the view back to page 1 / top. Saves are
+  trailing-debounced (150 ms) on both `pagechanging` and the container's
+  `scroll` event so continuous scrolling doesn't hammer `chrome.storage`
+
+### Fixed
+- **Embedded PDFs needed a click before keys worked.** A PDF loaded in an
+  `<iframe>` (the case 0.4.1 started intercepting) kept keyboard focus on
+  the host page, so `j` / `k` scrolled the host until the user clicked the
+  PDF. Cross-origin iframes can't grab focus on themselves; a tiny content
+  script on the host page now listens for a `postMessage` from the viewer
+  and calls `iframe.focus()` on the originating iframe. No new permission
+  required — `matches: ["<all_urls>"]` is covered by the existing
+  `<all_urls>` host permission, so existing users aren't auto-disabled
+
 ## [0.4.1] - 2026-05-23
 
 ### Changed
