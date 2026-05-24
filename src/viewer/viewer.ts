@@ -77,7 +77,7 @@ export class Viewer {
   private statusCenter = document.getElementById("statusCenter")!;
   private statusRight = document.getElementById("statusRight")!;
 
-  private savePageScheduled = false;
+  private saveDebounceTimer: number | null = null;
 
   constructor(settings: Settings) {
     this.settings = settings;
@@ -173,7 +173,7 @@ export class Viewer {
 
     this.eventBus.on("pagechanging", () => {
       this.updateStatus();
-      this.schedulePageSave();
+      this.scheduleSave();
     });
     this.eventBus.on("scalechanging", () => this.updateStatus());
 
@@ -199,6 +199,16 @@ export class Viewer {
       else if (e.matchesCount && e.matchesCount.total > 0)
         this.setStatusCenter(`${e.matchesCount.current} / ${e.matchesCount.total}`);
     });
+
+    // Persist within-page scroll position too (debounced). Without this,
+    // livereload reloads — where the iframe just re-navigates with no
+    // beforeunload to flush state — lose the offset even after the storage
+    // key normalization treats the new `?t=…` URL as the same document.
+    this.container.addEventListener(
+      "scroll",
+      () => this.scheduleSave(),
+      { passive: true },
+    );
   }
 
   async load(url: string): Promise<void> {
@@ -757,54 +767,91 @@ export class Viewer {
 
   // --- Persistence ---
 
+  // Cache-busting query params used by common livereload watchers. The
+  // storage key strips these so `paper.pdf?t=1747999123456` is treated as
+  // the same document across reloads — otherwise every recompile would
+  // land on a brand-new key and revert to page 1.
+  private static readonly CACHE_BUST_PARAMS = ["t", "_", "v", "cb", "ts", "r"];
+
+  private static storageUrl(url: string): string {
+    try {
+      const u = new URL(url, location.href);
+      for (const p of Viewer.CACHE_BUST_PARAMS) u.searchParams.delete(p);
+      u.hash = "";
+      return u.toString();
+    } catch {
+      // blob:, data:, or otherwise non-parseable — use as-is.
+      return url;
+    }
+  }
+
   private storageKey(): string {
-    return `vimdf:state:${this.pdfUrl}`;
+    return `vimdf:state:${Viewer.storageUrl(this.pdfUrl)}`;
   }
 
   private async saveState(): Promise<void> {
     if (!this.pdfUrl) return;
-    const existing = await chrome.storage.local.get(this.storageKey());
-    const prev = (existing[this.storageKey()] ?? {}) as {
+    const key = this.storageKey();
+    const existing = await chrome.storage.local.get(key);
+    const prev = (existing[key] ?? {}) as {
       page?: number;
+      scrollTop?: number;
     };
     const next: typeof prev = { ...prev };
-    if (this.settings.rememberLastPage) next.page = this.currentPage;
-    await chrome.storage.local.set({ [this.storageKey()]: next });
+    if (this.settings.rememberLastPage) {
+      next.page = this.currentPage;
+      next.scrollTop = this.container.scrollTop;
+    }
+    await chrome.storage.local.set({ [key]: next });
   }
 
   /**
-   * Debounce page saves: pagechanging fires on every visible-page update
-   * while scrolling. We only need the latest value.
+   * Trailing-debounced save. Both pagechanging and the container's `scroll`
+   * event funnel through here — 150 ms after the last one fires, persist
+   * page + scrollTop. Short enough that the watcher's recompile→reload
+   * window (~hundreds of ms) almost always catches the latest position;
+   * long enough that continuous scrolling doesn't hammer chrome.storage.
    */
-  private schedulePageSave(): void {
+  private scheduleSave(): void {
     if (!this.settings.rememberLastPage) return;
-    if (this.savePageScheduled) return;
-    this.savePageScheduled = true;
-    setTimeout(() => {
-      this.savePageScheduled = false;
+    if (this.saveDebounceTimer !== null) {
+      clearTimeout(this.saveDebounceTimer);
+    }
+    this.saveDebounceTimer = window.setTimeout(() => {
+      this.saveDebounceTimer = null;
       void this.saveState();
-    }, 400);
+    }, 150);
   }
 
   private async restoreState(): Promise<void> {
     if (!this.pdfUrl) return;
     const key = this.storageKey();
     const result = await chrome.storage.local.get(key);
-    const state = result[key] as { page?: number } | undefined;
-    if (!state) return;
-    if (
-      this.settings.rememberLastPage &&
-      typeof state.page === "number" &&
-      state.page > 1
-    ) {
-      // Delay until PDFViewer has laid pages out.
-      queueMicrotask(() => {
+    const state = result[key] as
+      | { page?: number; scrollTop?: number }
+      | undefined;
+    if (!state || !this.settings.rememberLastPage) return;
+    const hasPage = typeof state.page === "number" && state.page > 1;
+    const hasScroll =
+      typeof state.scrollTop === "number" && state.scrollTop > 0;
+    if (!hasPage && !hasScroll) return;
+    // Microtask: wait until PDFViewer has the document set. RAF: let PDF.js's
+    // own page-set scroll settle first, then snap scrollTop authoritatively
+    // so a livereload restores the exact previous offset, not the top of the
+    // saved page.
+    queueMicrotask(() => {
+      if (hasPage) {
         this.pdfViewer.currentPageNumber = Math.min(
           this.numPages,
           state.page as number,
         );
-      });
-    }
+      }
+      if (hasScroll) {
+        requestAnimationFrame(() => {
+          this.container.scrollTop = state.scrollTop as number;
+        });
+      }
+    });
   }
 
   // --- Status bar ---
@@ -942,6 +989,14 @@ async function main(): Promise<void> {
   const search = new SearchController(viewer);
   const vim = new VimController(viewer, marks, search);
   vim.attach();
+
+  // If we're embedded as a sub-frame, ask our content script in the parent
+  // page to focus this iframe — cross-origin iframes can't grab focus on
+  // themselves, so keys go to the host page's body until the user clicks
+  // the PDF. Top-level PDF tabs (no parent) skip this.
+  if (window.parent !== window) {
+    window.parent.postMessage("vimdf:loaded", "*");
+  }
 
   onSettingsChanged((next) => {
     viewer.settings = next;

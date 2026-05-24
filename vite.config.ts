@@ -5,7 +5,7 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 const manifest = defineManifest({
   manifest_version: 3,
   name: "VimDF",
-  version: "0.4.1",
+  version: "0.4.2",
   description: "Navigate PDFs with Vim keybindings",
   author: { email: "tatsukamijo@icloud.com" },
   permissions: ["declarativeNetRequest", "storage", "downloads", "tabs"],
@@ -23,6 +23,20 @@ const manifest = defineManifest({
     service_worker: "src/background/service-worker.ts",
     type: "module",
   },
+  // Tiny script in every page that focuses the VimDF iframe when our
+  // viewer postMessages `vimdf:loaded`. Without it, an embedded PDF
+  // (live-preview servers, doc viewers that wrap PDFs in iframes) keeps
+  // the host page focused and j/k just scroll the host until the user
+  // clicks into the PDF. Covered by the existing `<all_urls>` host
+  // permission, so this adds no new install-time warning.
+  content_scripts: [
+    {
+      matches: ["<all_urls>"],
+      js: ["src/content/focus-pdf-iframe.ts"],
+      run_at: "document_start",
+      all_frames: false,
+    },
+  ],
   options_page: "src/options/options.html",
   web_accessible_resources: [
     {

@@ -63,7 +63,7 @@ VimDF replaces Chrome's built-in PDF viewer with a modal, keyboard-driven one. I
   </p>
 
 - **Publisher shims** — auto-redirects Science / OpenReview / ACM / arXiv viewer pages to the raw PDF so you stay in VimDF
-- **Remembers last page** per document (toggleable)
+- **Remembers last page** per document (toggleable). Also keeps within-page scroll position across **livereload reloads** — when a watcher regenerates a PDF and the iframe URL gets a cache-bust `?t=…`, VimDF treats it as the same document and restores your previous page + scroll offset, so the view doesn't jump on every recompile
 - **Theming** — Auto/Dark/Light; customizable hint & status-bar colors
 - **Keymap aliases** — bind your own keys to half/full-page scroll commands
 - **Scrollable & searchable help** — `?` opens the keybinding reference; `j`/`k` to scroll, `/` to filter live
