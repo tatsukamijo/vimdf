@@ -5,6 +5,29 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.3] - 2026-05-26
+
+### Fixed
+- **`Cmd`-modified keys no longer trigger plain-key Vim bindings.** `Cmd+O`
+  used to open the outline (the dispatcher matched on `e.key === "o"`
+  without checking modifiers); same story for `Cmd+F` entering hint mode,
+  `Cmd+T` double-firing "new tab", `Cmd+±` / `Cmd+0` overriding browser
+  zoom, etc. The plain-key switch now skips when Ctrl / Meta (Cmd) / Alt is
+  held, so browser and system shortcuts pass through. Shift is still
+  allowed — it's how we get `T` / `J` / `K` / `H` / `L` / `G` / `N` from
+  their lowercase counterparts. `Ctrl-{d,u,f,b,o,i}` and user-defined
+  aliases are matched earlier and unaffected
+- **One-shot download-CGI links no longer fail with "Invalid PDF
+  structure".** The 0.4.1 Content-Type catch-all was intercepting *every*
+  `application/pdf` response, including endpoints that send
+  `Content-Disposition: attachment` — single-use download tokens, signed-
+  once URLs, etc. The redirect happens after the original response, so the
+  viewer's subsequent `getDocument()` was a fresh request the server
+  rejected with HTML, which PDF.js then tried to parse as a PDF. The
+  catch-all now sets `excludedResponseHeaders: content-disposition:
+  attachment*` so the browser handles those natively (downloads them).
+  URL-pattern rules (`.pdf` suffix, arXiv, OpenReview, etc.) are unchanged
+
 ## [0.4.2] - 2026-05-23
 
 ### Changed

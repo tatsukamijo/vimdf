@@ -28,6 +28,7 @@ const REDIRECT_RULES: ReadonlyArray<{
   regexFilter: string;
   fileRef: string;
   responseHeaders?: ResponseHeaderMatch[];
+  excludedResponseHeaders?: ResponseHeaderMatch[];
 }> = [
   // Any URL ending in .pdf (covers nature.com/articles/*.pdf, direct links).
   { regexFilter: "^https?://.*\\.pdf(\\?.*)?$", fileRef: "\\0" },
@@ -75,6 +76,15 @@ const REDIRECT_RULES: ReadonlyArray<{
         values: ["application/pdf*", "application/x-pdf*"],
       },
     ],
+    // Skip when the server says "this is a download, not something to
+    // render." Many such endpoints are one-shot download CGIs / signed-
+    // once URLs that 4xx if refetched — and DNR's responseHeaders match
+    // fires *after* the original response, so the viewer's subsequent
+    // getDocument() is a fresh request the server rejects. Letting the
+    // browser handle it natively downloads the PDF as intended.
+    excludedResponseHeaders: [
+      { header: "content-disposition", values: ["attachment*"] },
+    ],
   },
   // Local files.
   { regexFilter: "^file://.*\\.pdf$", fileRef: "\\0" },
@@ -102,11 +112,20 @@ async function ensureRedirectRules(): Promise<void> {
           chrome.declarativeNetRequest.ResourceType.SUB_FRAME,
         ],
       };
-      if (rule.responseHeaders) {
-        // `responseHeaders` isn't in @types/chrome 0.0.270 yet — attach it
-        // through a cast so the runtime still receives the condition.
-        (condition as { responseHeaders?: ResponseHeaderMatch[] })
-          .responseHeaders = rule.responseHeaders;
+      if (rule.responseHeaders || rule.excludedResponseHeaders) {
+        // Neither `responseHeaders` nor `excludedResponseHeaders` is in
+        // @types/chrome 0.0.270 yet — attach via cast so the runtime
+        // still receives the condition.
+        const headerCond = condition as {
+          responseHeaders?: ResponseHeaderMatch[];
+          excludedResponseHeaders?: ResponseHeaderMatch[];
+        };
+        if (rule.responseHeaders) {
+          headerCond.responseHeaders = rule.responseHeaders;
+        }
+        if (rule.excludedResponseHeaders) {
+          headerCond.excludedResponseHeaders = rule.excludedResponseHeaders;
+        }
       }
       return {
         id: idx + 1,
