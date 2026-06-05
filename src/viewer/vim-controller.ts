@@ -384,6 +384,15 @@ export class VimController {
       return;
     }
 
+    // Plain-key bindings below: skip if Ctrl / Meta (Cmd) / Alt is held so
+    // browser and system shortcuts (Cmd+O open file, Cmd+F find, Cmd+T new
+    // tab, Cmd+± / Cmd+0 zoom, ...) pass through untouched. Shift is
+    // allowed — it's how we get T / J / K / H / L / G / N from their
+    // lowercase counterparts. Modifier combos that VimDF *does* want
+    // (Ctrl-{d,u,f,b,o,i}, user-defined aliases) are matched earlier in
+    // this function and `return` before reaching here.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+
     switch (key) {
       case "j":
         e.preventDefault();
