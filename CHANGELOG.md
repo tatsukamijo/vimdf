@@ -5,6 +5,17 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.4] - 2026-06-22
+
+### Fixed
+- **GitHub `/blob/` PDF links no longer fail with "invalid PDF structure".**
+  A URL like `github.com/<owner>/<repo>/blob/<path>.pdf` is GitHub's HTML
+  viewer page (`Content-Type: text/html`), not the PDF bytes — the generic
+  `.pdf` rule matched the suffix and handed that HTML to the viewer. A new,
+  higher-priority redirect rule rewrites such links to the raw host
+  (`raw.githubusercontent.com/<owner>/<repo>/<path>.pdf`), which serves the
+  actual file. Same shape as the existing Science.org rewrite
+
 ## [0.4.3] - 2026-05-26
 
 ### Fixed

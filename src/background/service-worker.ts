@@ -27,9 +27,22 @@ interface ResponseHeaderMatch {
 const REDIRECT_RULES: ReadonlyArray<{
   regexFilter: string;
   fileRef: string;
+  priority?: number;
   responseHeaders?: ResponseHeaderMatch[];
   excludedResponseHeaders?: ResponseHeaderMatch[];
 }> = [
+  // GitHub: a `/blob/` URL ending in .pdf is GitHub's HTML viewer page, not
+  // the PDF bytes (it answers `Content-Type: text/html`). Feeding that to the
+  // viewer yields "invalid PDF structure". Rewrite to the raw host, which
+  // serves the actual file. Same shape as the Science rule: nice URL vs raw
+  // PDF differ by a path segment. Needs a higher priority than the generic
+  // `.pdf` rule below, which also matches a blob URL's `.pdf` suffix.
+  {
+    regexFilter:
+      "^https?://github\\.com/([^/]+/[^/]+)/blob/(.+?\\.pdf)(\\?.*)?$",
+    fileRef: "https://raw.githubusercontent.com/\\1/\\2",
+    priority: 2,
+  },
   // Any URL ending in .pdf (covers nature.com/articles/*.pdf, direct links).
   { regexFilter: "^https?://.*\\.pdf(\\?.*)?$", fileRef: "\\0" },
   // arXiv serves PDFs without a .pdf extension.
@@ -129,7 +142,7 @@ async function ensureRedirectRules(): Promise<void> {
       }
       return {
         id: idx + 1,
-        priority: 1,
+        priority: rule.priority ?? 1,
         action: {
           type: chrome.declarativeNetRequest.RuleActionType.REDIRECT,
           redirect: {
