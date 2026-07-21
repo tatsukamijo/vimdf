@@ -43,8 +43,19 @@ const REDIRECT_RULES: ReadonlyArray<{
     fileRef: "https://raw.githubusercontent.com/\\1/\\2",
     priority: 2,
   },
-  // Any URL ending in .pdf (covers nature.com/articles/*.pdf, direct links).
-  { regexFilter: "^https?://.*\\.pdf(\\?.*)?$", fileRef: "\\0" },
+  // Any URL whose *path* ends in .pdf (covers nature.com/articles/*.pdf,
+  // direct links). Anchored to the path — `[^?#]*` — so a `.pdf` that only
+  // appears inside the query string does NOT fire this request-stage
+  // redirect. Example: ScienceDirect's
+  // `/pii/<id>/pdfft?md5=…&pid=…-main.pdf` answers the first navigation
+  // with a Cloudflare "are you a robot?" interstitial; redirecting at the
+  // request stage would hand that HTML to the viewer ("Invalid PDF
+  // structure") and the user never gets to solve the challenge. Left
+  // alone, the challenge renders natively, and once it's passed the server
+  // answers with a real PDF — which the Content-Type catch-all below then
+  // routes to the viewer. Query-only `.pdf` URLs that do serve PDF bytes
+  // directly are likewise caught by that catch-all, one response later.
+  { regexFilter: "^https?://[^?#]*\\.pdf([?#].*)?$", fileRef: "\\0" },
   // arXiv serves PDFs without a .pdf extension.
   {
     regexFilter: "^https?://arxiv\\.org/pdf/[^?#]+(\\?.*)?$",
@@ -191,6 +202,93 @@ chrome.runtime.onStartup.addListener(() => {
   void ensureRedirectRules();
 });
 
+// ---------------------------------------------------------------------------
+// One-shot interception bypass.
+//
+// When the viewer fetches its `file=` URL and gets something that isn't a
+// PDF — a Cloudflare "are you a robot?" interstitial, a login wall, plain
+// HTML at a `.pdf` path — showing "Invalid PDF structure" is a dead end:
+// whatever the server wanted to show needs to render *natively* so the user
+// can act on it. The viewer sends `vimdf.bypass` with the URL; we install a
+// session-scoped `allow` rule for exactly that URL (outranking every
+// redirect rule), reply, and the viewer re-navigates. Once the bypassed
+// navigation finishes loading — or after a fallback timeout — the rule is
+// dropped, so the next hit on that URL (e.g. the post-captcha reload, now
+// carrying the clearance cookie) is intercepted normally again.
+
+const BYPASS_RULE_ID = 4242;
+// Ceiling on how long a bypass stays armed when we never see the bypassed
+// navigation complete. Best-effort: a service-worker restart drops the
+// timer. A rule that outlives both disarm paths is contained — it is
+// scoped to one tab and one exact URL — and gets swept on the next
+// service-worker start (below).
+const BYPASS_FALLBACK_MS = 60_000;
+
+const escapeRegex = (s: string): string =>
+  s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+async function removeBypassRule(): Promise<void> {
+  try {
+    await chrome.declarativeNetRequest.updateSessionRules({
+      removeRuleIds: [BYPASS_RULE_ID],
+    });
+  } catch {
+    // Nothing to remove.
+  }
+}
+
+let bypassTimer: ReturnType<typeof setTimeout> | undefined;
+let bypassTabId: number | undefined;
+
+async function addBypassRule(url: string, tabId?: number): Promise<void> {
+  const condition: chrome.declarativeNetRequest.RuleCondition = {
+    regexFilter: `^${escapeRegex(url)}$`,
+    // MAIN_FRAME only: the viewer never requests a bypass from inside an
+    // iframe (see main() in viewer.ts), and a narrower rule can't leak
+    // interception away from embedded PDFs.
+    resourceTypes: [chrome.declarativeNetRequest.ResourceType.MAIN_FRAME],
+  };
+  // Scope the stand-down to the requesting tab (tabIds conditions are a
+  // session-rule-only feature — exactly why the bypass uses session rules).
+  // Other tabs opening the same URL keep normal interception, and a rule
+  // that somehow outlives its disarm paths dies with the tab.
+  if (tabId !== undefined) condition.tabIds = [tabId];
+  await chrome.declarativeNetRequest.updateSessionRules({
+    // Drop any stale bypass first — one armed bypass at a time.
+    removeRuleIds: [BYPASS_RULE_ID],
+    addRules: [
+      {
+        id: BYPASS_RULE_ID,
+        // Outranks every redirect rule above (their max priority is 2).
+        priority: 100,
+        action: { type: chrome.declarativeNetRequest.RuleActionType.ALLOW },
+        condition,
+      },
+    ],
+  });
+  bypassTabId = tabId;
+  if (bypassTimer !== undefined) clearTimeout(bypassTimer);
+  bypassTimer = setTimeout(() => void removeBypassRule(), BYPASS_FALLBACK_MS);
+}
+
+// Sweep any bypass that outlived its disarm paths (e.g. the fallback timer
+// died with a service-worker shutdown). Top-level code runs on every
+// service-worker start; an in-flight bypass can't be swept by accident,
+// because the worker that armed it stays alive well past the sub-second
+// window in which the viewer re-navigates.
+void removeBypassRule();
+
+// Disarm as soon as the bypassed tab finishes loading whatever the server
+// actually serves — so a post-challenge reload of the same URL is
+// intercepted again (and the viewer's fetch then succeeds, because the
+// clearance cookie now exists). The timer above covers what this misses.
+chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
+  if (tabId === bypassTabId && changeInfo.status === "complete") {
+    bypassTabId = undefined;
+    void removeBypassRule();
+  }
+});
+
 // Vimium-compatible tab commands. Vimium itself can't bind keys on Chrome's
 // PDF viewer, and our content script runs there but can't call chrome.tabs.*
 // directly — so the viewer sends an action here and we drive the tab API.
@@ -253,10 +351,27 @@ async function runTabAction(action: TabAction): Promise<void> {
   }
 }
 
-chrome.runtime.onMessage.addListener((msg) => {
+chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg && typeof msg === "object" && msg.type === "vimdf.tab") {
     void runTabAction(msg.action as TabAction);
+    return false;
   }
+  if (
+    msg &&
+    typeof msg === "object" &&
+    msg.type === "vimdf.bypass" &&
+    typeof msg.url === "string"
+  ) {
+    addBypassRule(msg.url, sender.tab?.id).then(
+      () => sendResponse(true),
+      (err) => {
+        console.warn("VimDF: failed to install bypass rule:", err);
+        sendResponse(false);
+      },
+    );
+    return true; // keep the channel open for the async sendResponse
+  }
+  return false;
 });
 
 export {};

@@ -5,6 +5,32 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.5] - 2026-07-21
+
+### Fixed
+- **PDF links behind a bot-check interstitial (e.g. ScienceDirect) no longer
+  dead-end at "Invalid PDF structure".** Two changes:
+  - The generic `.pdf` redirect rule now only matches a `.pdf` at the end of
+    the URL *path*, not inside the query string. ScienceDirect's
+    `…/pdfft?md5=…&pid=…-main.pdf` links answer the first navigation with a
+    Cloudflare "Are you a robot?" page; the old rule redirected at the
+    request stage, so the viewer fetched that HTML and failed — and the user
+    never saw the challenge. Now the challenge renders natively, and once
+    solved the real `application/pdf` response is picked up by the existing
+    Content-Type catch-all and opens in VimDF. Query-only `.pdf` URLs that
+    do serve PDF bytes are still caught by the same catch-all
+  - When the viewer's fetch comes back as something that isn't a PDF (bot
+    check, login wall, HTML at a `.pdf` path, 404), it now installs a
+    one-shot session bypass rule — scoped to that tab and exact URL — and
+    re-navigates, letting the browser show the page the server actually
+    served. The bypass disarms once that page finishes loading, so the
+    follow-up visit — post-captcha, now carrying the clearance cookie — is
+    intercepted by VimDF again. A per-tab guard stops the viewer from
+    bouncing in a loop on URLs that persistently serve non-PDF content.
+    Embedded viewers (e.g. a LaTeX livereload iframe reloading a
+    half-written PDF mid-compile) never bypass — there the transient error
+    is correct, and the next reload lands back in VimDF
+
 ## [0.4.4] - 2026-06-22
 
 ### Fixed

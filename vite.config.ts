@@ -5,7 +5,7 @@ import { viteStaticCopy } from "vite-plugin-static-copy";
 const manifest = defineManifest({
   manifest_version: 3,
   name: "VimDF",
-  version: "0.4.4",
+  version: "0.4.5",
   description: "Navigate PDFs with Vim keybindings",
   author: { email: "tatsukamijo@icloud.com" },
   permissions: ["declarativeNetRequest", "storage", "downloads", "tabs"],
