@@ -5,12 +5,18 @@ import type { Settings } from "../common/settings";
 import {
   activateFocusedOutline,
   clearOutlineFocus,
+  collapseFocusedOutline,
+  expandFocusedOutline,
   focusCurrentSection,
   focusFirstOutlineItem,
   hasOutlineItems,
   isOutlineFocusActive,
+  focusLastOutlineItem,
   isSidebarOpen,
   moveOutlineFocus,
+  moveOutlineFocusPage,
+  outlineFold,
+  type FoldOp,
   toggleSidebar,
 } from "./outline";
 import { ContinuousScroll } from "./continuous-scroll";
@@ -29,6 +35,8 @@ export class VimController {
   private pendingCount = "";
   private pendingG = false;
   private pendingMark: "set" | "jump" | null = null;
+  private pendingZ = false;
+  private pendingOutlineG = false;
 
   private scroller: ContinuousScroll;
   private hints: HintController;
@@ -127,6 +135,8 @@ export class VimController {
       target instanceof HTMLTextAreaElement ||
       (target instanceof HTMLElement && target.isContentEditable)
     ) {
+      this.pendingZ = false;
+      this.pendingOutlineG = false;
       return;
     }
 
@@ -136,12 +146,19 @@ export class VimController {
     // prints the rendered pages.
     if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
       const lk = key.toLowerCase();
+      // These return before the outline block, which otherwise consumes an
+      // armed z prefix — without the reset, the key after a z, Cmd+S
+      // detour would silently run as a fold command.
       if (lk === "s") {
+        this.pendingZ = false;
+        this.pendingOutlineG = false;
         e.preventDefault();
         void this.viewer.download();
         return;
       }
       if (lk === "p") {
+        this.pendingZ = false;
+        this.pendingOutlineG = false;
         e.preventDefault();
         void this.viewer.print();
         return;
@@ -166,15 +183,95 @@ export class VimController {
     // Outline navigation takes priority over caret mode so j/k/Enter can steer
     // the sidebar even while caret insert/visual is active.
     if (isOutlineFocusActive()) {
-      if (key === "j") {
+      // Bare modifier presses must not clear focus or break the z prefix
+      // (`zM` arrives as z, Shift, M).
+      if (
+        key === "Shift" ||
+        key === "Control" ||
+        key === "Alt" ||
+        key === "Meta"
+      ) {
+        return;
+      }
+      const plain = !e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey;
+      if (this.pendingOutlineG) {
+        this.pendingOutlineG = false;
+        if (plain && key === "g") {
+          e.preventDefault();
+          focusFirstOutlineItem();
+          return;
+        }
+      }
+      if (this.pendingZ) {
+        this.pendingZ = false;
+        if (
+          !e.ctrlKey &&
+          !e.metaKey &&
+          !e.altKey &&
+          key.length === 1 &&
+          "aocAOCmrMR".includes(key)
+        ) {
+          e.preventDefault();
+          outlineFold(key as FoldOp);
+          return;
+        }
+      }
+      if (key === "j" || (plain && key === "ArrowDown")) {
         e.preventDefault();
         moveOutlineFocus(1);
         return;
       }
-      if (key === "k") {
+      if (key === "k" || (plain && key === "ArrowUp")) {
         e.preventDefault();
         moveOutlineFocus(-1);
         return;
+      }
+      if (plain && (key === "l" || key === "ArrowRight")) {
+        e.preventDefault();
+        expandFocusedOutline();
+        return;
+      }
+      if (plain && (key === "h" || key === "ArrowLeft")) {
+        e.preventDefault();
+        collapseFocusedOutline();
+        return;
+      }
+      if (plain && key === "z") {
+        e.preventDefault();
+        this.pendingZ = true;
+        return;
+      }
+      // `o` with focus always closes; opening / refocusing an unfocused
+      // outline is handled by the two `o` handlers further down.
+      if (plain && key === "o") {
+        e.preventDefault();
+        toggleSidebar();
+        return;
+      }
+      if (plain && key === "g") {
+        e.preventDefault();
+        this.pendingOutlineG = true;
+        return;
+      }
+      if (!e.ctrlKey && !e.metaKey && !e.altKey && key === "G") {
+        e.preventDefault();
+        focusLastOutlineItem();
+        return;
+      }
+      // Page movement stays inside the outline — scrolling the document
+      // out from under the focus breaks the "I'm in the outline" model.
+      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey) {
+        const lk = key.toLowerCase();
+        if (lk === "d" || lk === "u") {
+          e.preventDefault();
+          moveOutlineFocusPage(lk === "d" ? 1 : -1, false);
+          return;
+        }
+        if (lk === "f" || lk === "b") {
+          e.preventDefault();
+          moveOutlineFocusPage(lk === "f" ? 1 : -1, true);
+          return;
+        }
       }
       if (key === "Enter") {
         e.preventDefault();
@@ -191,6 +288,28 @@ export class VimController {
       ) {
         e.preventDefault();
         clearOutlineFocus();
+        return;
+      }
+      // After the built-ins, so an alias recorded as e.g. "Ctrl+h" can't
+      // shadow the focus-release above.
+      if (matchesAlias(e, this.viewer.settings.halfPageDownKey)) {
+        e.preventDefault();
+        moveOutlineFocusPage(1, false);
+        return;
+      }
+      if (matchesAlias(e, this.viewer.settings.halfPageUpKey)) {
+        e.preventDefault();
+        moveOutlineFocusPage(-1, false);
+        return;
+      }
+      if (matchesAlias(e, this.viewer.settings.fullPageDownKey)) {
+        e.preventDefault();
+        moveOutlineFocusPage(1, true);
+        return;
+      }
+      if (matchesAlias(e, this.viewer.settings.fullPageUpKey)) {
+        e.preventDefault();
+        moveOutlineFocusPage(-1, true);
         return;
       }
       clearOutlineFocus();
@@ -223,11 +342,17 @@ export class VimController {
           requestAnimationFrame(() => this.caretMode.reseed());
           return;
         }
-        // Plain `o` toggles the sidebar. Auto-focuses the current section
-        // so j/k can drive the outline without leaving caret insert.
+        // Plain `o` toggles the sidebar (auto-focusing the current section)
+        // without leaving caret insert. Only an unfocused outline reaches
+        // here — the outline block above closes on focused `o` — so the
+        // "refocus" option means: skip the toggle, take back the focus.
         if (key === "o" && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
           e.preventDefault();
-          toggleSidebar();
+          const refocus =
+            this.viewer.settings.outlineOBehavior === "refocus" &&
+            isSidebarOpen() &&
+            hasOutlineItems();
+          if (!refocus) toggleSidebar();
           if (isSidebarOpen() && hasOutlineItems()) {
             if (!focusCurrentSection(this.viewer.currentPage)) {
               focusFirstOutlineItem();
@@ -464,15 +589,23 @@ export class VimController {
         this.sendTabCommand("close");
         return;
 
-      case "o":
+      case "o": {
+        // Only an unfocused outline reaches here (the outline block closes
+        // on focused `o`); the "refocus" option skips the toggle and takes
+        // back the focus instead.
         e.preventDefault();
-        toggleSidebar();
+        const refocus =
+          s.outlineOBehavior === "refocus" &&
+          isSidebarOpen() &&
+          hasOutlineItems();
+        if (!refocus) toggleSidebar();
         if (isSidebarOpen() && hasOutlineItems()) {
           if (!focusCurrentSection(this.viewer.currentPage)) {
             focusFirstOutlineItem();
           }
         }
         return;
+      }
 
       case "?":
         e.preventDefault();

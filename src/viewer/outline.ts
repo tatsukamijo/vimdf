@@ -16,6 +16,8 @@ interface OutlineNode {
 }
 
 const activatorByRow = new WeakMap<HTMLElement, () => void>();
+const childrenByRow = new WeakMap<HTMLElement, HTMLElement>();
+const parentByRow = new WeakMap<HTMLElement, HTMLElement>();
 
 interface RowMeta {
   row: HTMLElement;
@@ -60,6 +62,7 @@ export async function buildOutline(
   viewer: Viewer,
 ): Promise<void> {
   outlineRows = [];
+  foldLevel = Infinity;
   const tree = document.getElementById("outlineTree");
   if (!tree) return;
   tree.innerHTML = "";
@@ -134,12 +137,14 @@ function renderList(
   nodes: OutlineNode[],
   linkService: PDFLinkService,
   viewer: Viewer,
+  parentRow?: HTMLElement,
 ): DocumentFragment {
   const frag = document.createDocumentFragment();
   for (const node of nodes) {
     const row = document.createElement("div");
     row.className = "outline-item";
     row.textContent = node.title;
+    if (parentRow) parentByRow.set(row, parentRow);
     const meta: RowMeta = {
       row,
       node,
@@ -177,9 +182,11 @@ function renderList(
     row.addEventListener("click", activate);
     frag.appendChild(row);
     if (node.items && node.items.length > 0) {
+      row.classList.add("has-children");
       const children = document.createElement("div");
       children.className = "outline-children";
-      children.appendChild(renderList(node.items, linkService, viewer));
+      children.appendChild(renderList(node.items, linkService, viewer, row));
+      childrenByRow.set(row, children);
       frag.appendChild(children);
     }
   }
@@ -208,7 +215,9 @@ export function isSidebarOpen(): boolean {
 function getItems(): HTMLElement[] {
   const tree = document.getElementById("outlineTree");
   if (!tree) return [];
-  return Array.from(tree.querySelectorAll<HTMLElement>(".outline-item"));
+  return Array.from(tree.querySelectorAll<HTMLElement>(".outline-item")).filter(
+    (el) => !el.closest(".outline-children.collapsed"),
+  );
 }
 
 let focusedIdx = -1;
@@ -221,8 +230,17 @@ export function isOutlineFocusActive(): boolean {
   return focusedIdx >= 0;
 }
 
+function clearFocusClass(): void {
+  document
+    .querySelectorAll<HTMLElement>("#outlineTree .outline-item.outline-focused")
+    .forEach((el) => el.classList.remove("outline-focused"));
+}
+
 function applyFocus(items: HTMLElement[], idx: number): void {
-  items.forEach((el, i) => el.classList.toggle("outline-focused", i === idx));
+  // Clear on all rows, not just visible ones — the previously focused row
+  // may have been hidden by a collapse.
+  clearFocusClass();
+  items[idx]?.classList.add("outline-focused");
   focusedIdx = idx;
   // Scroll within the sidebar only — a naive scrollIntoView can propagate to
   // other scrollable ancestors (e.g. the viewer container) under some layouts.
@@ -243,6 +261,28 @@ export function focusFirstOutlineItem(): boolean {
   return true;
 }
 
+export function focusLastOutlineItem(): boolean {
+  const items = getItems();
+  if (items.length === 0) return false;
+  applyFocus(items, items.length - 1);
+  return true;
+}
+
+// Half-/full-page focus movement, sized from how many rows fit the sidebar.
+export function moveOutlineFocusPage(dir: 1 | -1, full: boolean): void {
+  const sidebar = document.getElementById("sidebar");
+  const items = getItems();
+  if (items.length === 0) return;
+  const idx = focusedIdx >= 0 ? Math.min(focusedIdx, items.length - 1) : 0;
+  const rowH = items[idx].offsetHeight || 24;
+  const pageRows = Math.max(
+    1,
+    Math.floor((sidebar?.clientHeight ?? 0) / rowH),
+  );
+  const step = full ? pageRows : Math.max(1, Math.round(pageRows / 2));
+  moveOutlineFocus(dir * step);
+}
+
 /**
  * Focus the outline item that best represents the current viewing position —
  * i.e. the last entry whose resolved page ≤ `currentPage`. Falls back to the
@@ -260,9 +300,21 @@ export function focusCurrentSection(currentPage: number): boolean {
     applyFocus(items, 0);
     return true;
   }
-  const itemIdx = items.indexOf(outlineRows[best].row);
+  // The best row may sit inside a collapsed section; climb to the nearest
+  // visible ancestor.
+  const itemIdx = nearestVisibleIdx(outlineRows[best].row, items);
   applyFocus(items, itemIdx >= 0 ? itemIdx : 0);
   return true;
+}
+
+function nearestVisibleIdx(start: HTMLElement, items: HTMLElement[]): number {
+  let row: HTMLElement | undefined = start;
+  let idx = items.indexOf(row);
+  while (idx < 0 && row) {
+    row = parentByRow.get(row);
+    idx = row ? items.indexOf(row) : -1;
+  }
+  return idx;
 }
 
 export function moveOutlineFocus(delta: number): boolean {
@@ -277,6 +329,161 @@ export function moveOutlineFocus(delta: number): boolean {
   return true;
 }
 
+function focusedRow(): HTMLElement | null {
+  const items = getItems();
+  return focusedIdx >= 0 && focusedIdx < items.length ? items[focusedIdx] : null;
+}
+
+// The row's `collapsed` class (the ▸ marker) and its children container's
+// (visibility) must move together; this is the only place both are touched.
+function setRowCollapsed(row: HTMLElement, collapsed: boolean): void {
+  const children = childrenByRow.get(row);
+  if (!children) return;
+  row.classList.toggle("collapsed", collapsed);
+  children.classList.toggle("collapsed", collapsed);
+}
+
+function isRowCollapsed(row: HTMLElement): boolean {
+  return row.classList.contains("collapsed");
+}
+
+function subtreeRows(row: HTMLElement): HTMLElement[] {
+  const container = childrenByRow.get(row);
+  if (!container) return [];
+  return Array.from(container.querySelectorAll<HTMLElement>(".outline-item"));
+}
+
+// VS Code / ARIA tree semantics: expand, or step into the first child.
+export function expandFocusedOutline(): void {
+  const row = focusedRow();
+  if (!row || !childrenByRow.has(row)) return;
+  if (isRowCollapsed(row)) setRowCollapsed(row, false);
+  else moveOutlineFocus(1);
+}
+
+// Collapse, or step out to the parent.
+export function collapseFocusedOutline(): void {
+  const row = focusedRow();
+  if (!row) return;
+  if (childrenByRow.has(row) && !isRowCollapsed(row)) {
+    setRowCollapsed(row, true);
+    return;
+  }
+  const parent = parentByRow.get(row);
+  if (!parent) return;
+  const items = getItems();
+  const idx = items.indexOf(parent);
+  if (idx >= 0) applyFocus(items, idx);
+}
+
+export type FoldOp =
+  | "a" | "o" | "c"
+  | "A" | "O" | "C"
+  | "m" | "r"
+  | "M" | "R";
+
+// Vim's 'foldlevel': folds at depth >= foldLevel are closed. Manual za/zo/zc
+// don't update it, matching Vim.
+let foldLevel = Infinity;
+
+function rowDepth(row: HTMLElement): number {
+  let d = 0;
+  for (let p = parentByRow.get(row); p; p = parentByRow.get(p)) d++;
+  return d;
+}
+
+function maxFoldDepth(): number {
+  let max = 0;
+  for (const m of outlineRows) {
+    if (childrenByRow.has(m.row)) max = Math.max(max, rowDepth(m.row) + 1);
+  }
+  return max;
+}
+
+function applyFoldLevel(): void {
+  for (const m of outlineRows) {
+    if (childrenByRow.has(m.row)) {
+      setRowCollapsed(m.row, rowDepth(m.row) >= foldLevel);
+    }
+  }
+}
+
+export function outlineFold(op: FoldOp): void {
+  const row = focusedRow();
+  let target = row;
+  switch (op) {
+    case "M":
+      foldLevel = 0;
+      applyFoldLevel();
+      break;
+    case "R":
+      foldLevel = Infinity;
+      applyFoldLevel();
+      break;
+    case "m":
+      foldLevel = Math.max(0, Math.min(foldLevel, maxFoldDepth()) - 1);
+      applyFoldLevel();
+      break;
+    case "r":
+      foldLevel = Math.min(foldLevel + 1, maxFoldDepth());
+      applyFoldLevel();
+      break;
+    case "a": {
+      if (!row) break;
+      // On a leaf, act on the enclosing section, like Vim's za inside a fold.
+      const t = childrenByRow.has(row) ? row : parentByRow.get(row);
+      if (!t) break;
+      setRowCollapsed(t, !isRowCollapsed(t));
+      if (t !== row) target = t;
+      break;
+    }
+    case "o":
+      if (row) setRowCollapsed(row, false);
+      break;
+    case "c":
+      if (!row) break;
+      if (childrenByRow.has(row) && !isRowCollapsed(row)) {
+        setRowCollapsed(row, true);
+      } else {
+        // Vim: closing from inside a fold closes the enclosing one.
+        const parent = parentByRow.get(row);
+        if (parent) {
+          setRowCollapsed(parent, true);
+          target = parent;
+        }
+      }
+      break;
+    case "A": {
+      if (!row) break;
+      const t = childrenByRow.has(row) ? row : parentByRow.get(row);
+      if (!t) break;
+      const collapsed = isRowCollapsed(t);
+      [t, ...subtreeRows(t)].forEach((r) => setRowCollapsed(r, !collapsed));
+      if (t !== row) target = t;
+      break;
+    }
+    case "O":
+      if (row) [row, ...subtreeRows(row)].forEach((r) => setRowCollapsed(r, false));
+      break;
+    case "C":
+      if (!row) break;
+      if (childrenByRow.has(row)) {
+        [row, ...subtreeRows(row)].forEach((r) => setRowCollapsed(r, true));
+      } else {
+        const parent = parentByRow.get(row);
+        if (parent) {
+          [parent, ...subtreeRows(parent)].forEach((r) => setRowCollapsed(r, true));
+          target = parent;
+        }
+      }
+      break;
+  }
+  if (!target) return;
+  const items = getItems();
+  const idx = nearestVisibleIdx(target, items);
+  applyFocus(items, idx >= 0 ? idx : 0);
+}
+
 export function activateFocusedOutline(): boolean {
   const items = getItems();
   if (focusedIdx < 0 || focusedIdx >= items.length) return false;
@@ -287,6 +494,6 @@ export function activateFocusedOutline(): boolean {
 }
 
 export function clearOutlineFocus(): void {
-  getItems().forEach((el) => el.classList.remove("outline-focused"));
+  clearFocusClass();
   focusedIdx = -1;
 }

@@ -5,6 +5,28 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.6] - 2026-07-21
+
+### Added
+- **Arrow keys navigate the outline.** With the outline focused, `↓`/`↑` move
+  the selection just like `j`/`k` instead of scrolling the document away
+  from under the focus (#4)
+- **Outline sections collapse and expand.** With the outline focused, `h`/`←`
+  collapses the selected section (on a leaf or collapsed section, jumps to
+  the parent) and `l`/`→` expands it (on an expanded section, steps into the
+  first child) — VS Code / ARIA tree-view semantics. Sections with children
+  show a `▾`/`▸` marker. Vim's fold commands work too: `za`/`zo`/`zc`
+  (toggle/open/close, `zc` from inside closes the enclosing section),
+  `zA`/`zO`/`zC` (recursive), `zm`/`zr` (fold more/less by level),
+  `zM`/`zR` (close/open all) (#4)
+- **Paging keys stay inside a focused outline.** `Ctrl-d`/`Ctrl-u`/
+  `Ctrl-f`/`Ctrl-b` (and their user-defined aliases) move the selection by
+  half / full sidebar pages, and `gg`/`G` jump to the first / last section —
+  instead of scrolling the document out from under the outline focus
+- **`o` on an open-but-unfocused outline is configurable.** Default keeps
+  the existing toggle (close). A new option in the settings page switches
+  it to refocus the outline instead — `Ctrl-h` refocuses in either mode (#4)
+
 ## [0.4.5] - 2026-07-21
 
 ### Fixed

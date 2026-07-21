@@ -5,6 +5,8 @@
 
 export type Theme = "dark" | "light" | "auto";
 
+export type OutlineOBehavior = "toggle" | "refocus";
+
 export interface Settings {
   theme: Theme;
   scrollStep: number; // px per j/k press
@@ -16,6 +18,10 @@ export interface Settings {
   // expects at `pdfViewer.currentScaleValue`, so we pass it through.
   initialZoom: string;
   rememberLastPage: boolean;
+  // What plain `o` does when the outline is open but not focused:
+  // "toggle" closes it; "refocus" re-enters outline navigation (close with
+  // another `o` while focused, release focus with Esc / Ctrl-h).
+  outlineOBehavior: OutlineOBehavior;
   // Optional non-modifier aliases for the Ctrl-{d,u,f,b} page-scroll commands.
   // Empty string disables the alias (only the Ctrl version works). Examples:
   //   " "  -> Space triggers half-page down
@@ -44,6 +50,7 @@ export const DEFAULT_SETTINGS: Settings = {
   zoomStep: 1.1,
   initialZoom: "page-fit",
   rememberLastPage: true,
+  outlineOBehavior: "toggle",
   halfPageDownKey: "d",
   halfPageUpKey: "u",
   fullPageDownKey: "",
