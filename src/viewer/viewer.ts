@@ -961,6 +961,45 @@ function hexToRgb(
   };
 }
 
+// The server answered, but not with usable PDF bytes — an HTML interstitial
+// (Cloudflare "are you a robot?", a login wall), a 404 page, an error page.
+// These are exactly the responses the browser should render natively so the
+// user can act on them; pdf.js names them distinctly from network aborts.
+function isNotAPdfResponse(err: unknown): boolean {
+  const name = (err as { name?: string } | null)?.name;
+  return (
+    name === "InvalidPDFException" ||
+    name === "MissingPDFException" ||
+    name === "UnexpectedResponseException"
+  );
+}
+
+// Ask the service worker to stand down for `file`, then re-navigate so the
+// browser renders whatever the server is actually serving (bot-check
+// challenge, login page, …). Once that's dealt with, the next load of the
+// URL is intercepted normally again. sessionStorage is per-tab and survives
+// the navigation away and back, so it guards against bouncing in a loop
+// when the URL keeps serving non-PDF content.
+async function requestNativeBypass(file: string): Promise<boolean> {
+  const guardKey = `vimdf_bypassed:${file}`;
+  const last = Number(sessionStorage.getItem(guardKey) ?? 0);
+  if (Date.now() - last < 30_000) return false;
+  let ok = false;
+  try {
+    ok =
+      (await chrome.runtime.sendMessage({
+        type: "vimdf.bypass",
+        url: file,
+      })) === true;
+  } catch {
+    ok = false;
+  }
+  if (!ok) return false;
+  sessionStorage.setItem(guardKey, String(Date.now()));
+  location.replace(file);
+  return true;
+}
+
 async function main(): Promise<void> {
   // The DNR redirect builds `?file=<original-url>` with the original URL
   // pasted in verbatim — no percent-encoding of its `?`, `&`, or `=` —
@@ -1019,6 +1058,23 @@ async function main(): Promise<void> {
     await viewer.load(file);
   } catch (err) {
     console.error("Failed to load PDF:", err);
+    if (isNotAPdfResponse(err)) {
+      // Hand the URL back to the browser so the interstitial / error page
+      // the server is actually serving can render (and be acted on).
+      //
+      // Top-level tabs only. An embedded viewer (LaTeX livereload iframe)
+      // hits this path with every half-written PDF mid-compile, and a
+      // bypassed iframe navigation never fires tabs.onUpdated — the allow
+      // rule would strand the document in Chrome's native viewer for every
+      // reload after. There the transient error message *is* the right
+      // outcome: the next recompile reload lands back in VimDF.
+      const topLevel = window.parent === window;
+      if (topLevel && (await requestNativeBypass(file))) return;
+      document.getElementById("statusLeft")!.textContent =
+        `Error loading PDF: ${String(err)} — the server answered with ` +
+        "something that isn't a PDF (login or bot check?). Reload to retry.";
+      return;
+    }
     document.getElementById("statusLeft")!.textContent =
       `Error loading PDF: ${String(err)}`;
   }
