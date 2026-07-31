@@ -146,6 +146,19 @@ body {
   padding-left: 14px;
 }
 
+#outlineTree .outline-children.collapsed {
+  display: none;
+}
+
+#outlineTree .outline-item.has-children::before {
+  content: "▾ ";
+  color: #888;
+}
+
+#outlineTree .outline-item.has-children.collapsed::before {
+  content: "▸ ";
+}
+
 body.sidebar-open #viewerContainer {
   left: 280px;
 }

@@ -3,6 +3,7 @@ import {
   loadSettings,
   resetSettings,
   saveSettings,
+  type OutlineOBehavior,
   type Settings,
   type Theme,
 } from "../common/settings";
@@ -21,6 +22,9 @@ const fields = {
   rememberLastPage: document.getElementById(
     "rememberLastPage",
   ) as HTMLInputElement,
+  outlineOBehavior: document.getElementById(
+    "outlineOBehavior",
+  ) as HTMLSelectElement,
   halfPageDownKey: document.getElementById(
     "halfPageDownKey",
   ) as HTMLInputElement,
@@ -156,6 +160,7 @@ function apply(settings: Settings): void {
   fields.zoomStep.value = String(settings.zoomStep);
   applyInitialZoom(settings.initialZoom);
   fields.rememberLastPage.checked = settings.rememberLastPage;
+  fields.outlineOBehavior.value = settings.outlineOBehavior;
   applyKey(fields.halfPageDownKey, settings.halfPageDownKey);
   applyKey(fields.halfPageUpKey, settings.halfPageUpKey);
   applyKey(fields.fullPageDownKey, settings.fullPageDownKey);
@@ -216,6 +221,7 @@ function readForm(): Partial<Settings> {
     zoomStep: clamp(parseFloat(fields.zoomStep.value), 1.01, 2, 1.1),
     initialZoom: readInitialZoom(),
     rememberLastPage: fields.rememberLastPage.checked,
+    outlineOBehavior: fields.outlineOBehavior.value as OutlineOBehavior,
     halfPageDownKey: fields.halfPageDownKey.dataset.raw ?? "",
     halfPageUpKey: fields.halfPageUpKey.dataset.raw ?? "",
     fullPageDownKey: fields.fullPageDownKey.dataset.raw ?? "",
