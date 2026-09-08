@@ -11,11 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Local PDFs open in VimDF with no setup on Chrome 151+.** VimDF now
   registers as the browser's handler for `application/pdf` via the
   `mime_types_handler` manifest key, so Chrome hands it the document
-  directly. Besides fixing local files this keeps the real URL in the address
-  bar instead of `viewer.html?file=…`, and reuses the response Chrome already
-  fetched rather than issuing a second request — so single-use URLs and PDFs
-  delivered by POST work too. A new **Open PDFs in VimDF** switch on the
-  options page hands them back to Chrome's viewer without uninstalling
+  directly rather than VimDF having to intercept the request. Where that
+  path is taken the address bar keeps the document's real URL — local PDFs
+  now read `file:///…` instead of `viewer.html?file=…` — and Chrome passes
+  on the response it already fetched instead of VimDF issuing a second
+  request, so single-use URLs and PDFs delivered by POST work too. The
+  existing redirect rules still fire first for the `http(s)` URLs they match,
+  which keeps those on the old `viewer.html?file=…` form. A new **Open PDFs
+  in VimDF** switch on the options page hands PDFs back to Chrome's viewer
+  without uninstalling
 - **Drop a PDF onto the viewer to open it**, or pick one from the prompt.
   Reading a file handed over directly needs no permission of any kind, so
   this works regardless of Chrome version or file-access setting. The
@@ -47,6 +51,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rule rather than relying on a default that changed in Chrome 118
 - `withCredentials` is no longer set on the `file://` and in-memory load
   paths, where it means nothing
+- **Every page load logged two warnings on the extension's error card.** Vite
+  emits `<link rel="modulepreload" crossorigin>` for shared chunks; on an
+  extension page Chrome then declines to reuse the preload ("cross-world
+  extension resource mismatch") and follows up with "preloaded ... but not
+  used". The hint bought nothing — these modules load from local disk — so it
+  is no longer emitted
 
 ## [0.4.6] - 2026-07-21
 
