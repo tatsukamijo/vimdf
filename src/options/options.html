@@ -239,13 +239,26 @@
         <button id="reset" type="button">Reset to defaults</button>
       </section>
 
-      <section>
-        <h2>Local file access</h2>
+      <section id="pdfHandlerSection" hidden>
+        <h2>Default PDF viewer</h2>
+        <label class="row checkbox">
+          <input type="checkbox" id="pdfHandlerEnabled" />
+          <span>Open PDFs in VimDF</span>
+        </label>
         <p class="hint">
-          To open <code>file://</code> PDFs automatically, visit
-          <code>chrome://extensions</code>, find <b>VimDF</b>, and
-          enable <b>Allow access to file URLs</b>.
+          VimDF is registered with Chrome as a handler for
+          <code>application/pdf</code>. Turn this off to hand PDFs back to
+          Chrome&rsquo;s built-in viewer without uninstalling VimDF.
         </p>
+      </section>
+
+      <section>
+        <h2>Local files</h2>
+        <p class="hint" id="fileAccessStatus">Checking&hellip;</p>
+        <p class="hint" id="fileAccessDetail"></p>
+        <button id="openExtensionsPage" type="button" hidden>
+          Open VimDF&rsquo;s extension settings
+        </button>
       </section>
 
       <section>

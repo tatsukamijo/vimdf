@@ -111,7 +111,25 @@ const REDIRECT_RULES: ReadonlyArray<{
     ],
   },
   // Local files.
-  { regexFilter: "^file://.*\\.pdf$", fileRef: "\\0" },
+  //
+  // Only ever consulted when the user has ticked "Allow access to file URLs"
+  // on VimDF's chrome://extensions card. Chromium's
+  // `RulesetManager::ShouldEvaluateRulesetForRequest` returns early for any
+  // `file://` request from an extension without that grant, so the rule is
+  // not merely unmatched — the whole ruleset is skipped, silently, with
+  // nothing logged. That box is off by default for every Web Store install
+  // and on by default for unpacked ones, which is why local PDFs work in a
+  // dev build and not in the shipped extension.
+  //
+  // On Chrome 151+ this rule is redundant: the `mime_types_handler`
+  // registration in vite.config.ts catches local PDFs with no grant at all.
+  // It stays for older Chromium (and for anyone who has already ticked the
+  // box), where it remains the only path.
+  //
+  // Mirrors the http rule's shape rather than anchoring `$` straight after
+  // `.pdf`, so a cache-busted livereload URL (`paper.pdf?t=…`) and a deep
+  // link into a page (`paper.pdf#page=3`) both still match.
+  { regexFilter: "^file://[^?#]*\\.pdf([?#].*)?$", fileRef: "\\0" },
 ];
 
 async function ensureRedirectRules(): Promise<void> {
@@ -126,6 +144,11 @@ async function ensureRedirectRules(): Promise<void> {
     rules.map((rule, idx) => {
       const condition: chrome.declarativeNetRequest.RuleCondition = {
         regexFilter: rule.regexFilter,
+        // Pinned rather than left to the default. Every rule here writes its
+        // extension lowercase (`\.pdf`) and means it case-insensitively —
+        // `Report.PDF` is a real filename. The default flipped to false in
+        // Chrome 118; stating it keeps behaviour identical on older builds.
+        isUrlFilterCaseSensitive: false,
         // MAIN_FRAME: a PDF opened as its own tab. SUB_FRAME: a PDF embedded
         // in an <iframe> — e.g. a LaTeX live-preview server whose page is a
         // thin HTML shell around `<iframe src="paper.pdf">`. Without
@@ -356,12 +379,33 @@ chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
     void runTabAction(msg.action as TabAction);
     return false;
   }
+  // The viewer can't navigate to a chrome:// URL itself, so it asks us to
+  // point the tab at VimDF's own extensions card — where the "Allow access
+  // to file URLs" checkbox lives. Same tab on purpose: toggling that box
+  // reloads the extension, which closes every extension page it owns, so a
+  // second tab would just vanish under the user.
+  if (msg && typeof msg === "object" && msg.type === "vimdf.openExtensionsPage") {
+    const tabId = sender.tab?.id;
+    const url = `chrome://extensions/?id=${chrome.runtime.id}`;
+    if (tabId != null) void chrome.tabs.update(tabId, { url });
+    else void chrome.tabs.create({ url });
+    return false;
+  }
   if (
     msg &&
     typeof msg === "object" &&
     msg.type === "vimdf.bypass" &&
     typeof msg.url === "string"
   ) {
+    // Never for local files. The bypass exists to let a *server* render
+    // something that isn't a PDF (a bot check, a login wall); there is no
+    // server behind a file:// URL, so a failure there means the file is
+    // missing or unreadable and handing the tab back to Chrome only hides
+    // the real reason. The viewer refuses this on its side too.
+    if (msg.url.startsWith("file:")) {
+      sendResponse(false);
+      return false;
+    }
     addBypassRule(msg.url, sender.tab?.id).then(
       () => sendResponse(true),
       (err) => {

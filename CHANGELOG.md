@@ -5,6 +5,49 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.0] - 2026-09-08
+
+### Added
+- **Local PDFs open in VimDF with no setup on Chrome 151+.** VimDF now
+  registers as the browser's handler for `application/pdf` via the
+  `mime_types_handler` manifest key, so Chrome hands it the document
+  directly. Besides fixing local files this keeps the real URL in the address
+  bar instead of `viewer.html?file=…`, and reuses the response Chrome already
+  fetched rather than issuing a second request — so single-use URLs and PDFs
+  delivered by POST work too. A new **Open PDFs in VimDF** switch on the
+  options page hands them back to Chrome's viewer without uninstalling
+- **Drop a PDF onto the viewer to open it**, or pick one from the prompt.
+  Reading a file handed over directly needs no permission of any kind, so
+  this works regardless of Chrome version or file-access setting. The
+  document keeps its marks, highlights and last page
+- **The options page reports whether local PDFs will actually open**, instead
+  of unconditional prose telling you to tick a box you may not need, with a
+  button through to the setting when you do
+
+### Fixed
+- **Local PDFs silently opened in Chrome's viewer instead of VimDF.**
+  Chromium skips declarativeNetRequest evaluation entirely for `file://`
+  requests unless the user has enabled "Allow access to file URLs" — nothing
+  is logged and the rule still shows up in `getDynamicRules()`, so the
+  failure was invisible. That checkbox is off by default for Web Store
+  installs and **on** by default for unpacked ones, which is why local PDFs
+  worked in a development build and not in the published extension. VimDF now
+  detects the state and explains it, and on Chrome 151+ no longer needs it
+- **A local PDF that couldn't be read left a blank page.** pdf.js reports
+  every `file://` failure as `MissingPDFException`, which VimDF's bot-check
+  heuristic read as "the server sent an interstitial" and bounced out to
+  Chrome's viewer without writing a status message — or, on a second attempt
+  within 30 seconds, blamed a login wall for a file on disk. Local files are
+  now excluded from that path and get a real explanation plus a file picker
+- **`file://` PDFs with a query or fragment were never intercepted.** The
+  local rule anchored `$` immediately after `.pdf`, unlike the `http` rule, so
+  a cache-busted livereload URL (`paper.pdf?t=…`) or a deep link
+  (`paper.pdf#page=3`) fell through to Chrome's viewer
+- Case-insensitive URL matching is now stated explicitly on every redirect
+  rule rather than relying on a default that changed in Chrome 118
+- `withCredentials` is no longer set on the `file://` and in-memory load
+  paths, where it means nothing
+
 ## [0.4.6] - 2026-07-21
 
 ### Added

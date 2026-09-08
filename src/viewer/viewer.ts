@@ -32,6 +32,17 @@ import { checkAndShowConflictWarning } from "./conflict-notification";
 import { checkAndShowUpdateNotification } from "./update-notification";
 import { downloadPdf, printPdf, suggestedFilename } from "./print";
 import { showSaveDialog } from "./save-dialog";
+import {
+  abortAndFallbackToNativeHandler,
+  getStreamInfo,
+  isAllowedFileSchemeAccess,
+} from "./mime-handler";
+import {
+  closeLocalFilePanel,
+  displayPath,
+  enableDropToOpen,
+  showLocalFilePanel,
+} from "./local-file";
 
 GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.mjs",
@@ -40,6 +51,22 @@ GlobalWorkerOptions.workerSrc = new URL(
 
 const MIN_SCALE = 0.25;
 const MAX_SCALE = 10;
+
+/**
+ * Where a document's bytes come from, and what to call it.
+ *
+ * `url` and `data` are the two ways pdf.js can be fed; `identity` is kept
+ * separate from both because the thing we read is not always the thing the
+ * user navigated to. A `chrome.mimeHandler` stream URL is single-use and
+ * internal, and a file chosen from the picker has no URL whatsoever — but
+ * both should still resolve to the same marks, highlights and last page as
+ * the original document.
+ */
+export interface PdfSource {
+  url?: string;
+  data?: ArrayBuffer;
+  identity: string;
+}
 
 // Fallback flash dimensions for internal link destinations, which don't carry
 // their own extent — the PDF only tells us the target point. Matches the
@@ -211,24 +238,35 @@ export class Viewer {
     );
   }
 
-  async load(url: string): Promise<void> {
-    this.pdfUrl = url;
+  async load(src: PdfSource): Promise<void> {
+    // Identity, not necessarily what we read from: a MIME-handler stream URL
+    // is one-shot and internal, and a picked file has no URL at all. Keying
+    // storage on the navigated URL keeps marks and last-page attached to the
+    // document however its bytes reached us.
+    this.pdfUrl = src.identity;
+    const isHttp = /^https?:/i.test(src.url ?? "");
     const loadingTask = getDocument({
-      url,
+      ...(src.data !== undefined ? { data: src.data } : { url: src.url! }),
       cMapUrl: chrome.runtime.getURL("cmaps/"),
       cMapPacked: true,
       // Forward cookies on the cross-origin fetch so cookie-authenticated
       // signed URLs work (Notion attachments, Drive previews, etc). Without
       // this the request goes out anonymously and gets a 4xx from anything
       // behind a session check. Safe for unauthenticated PDFs too — just
-      // sets the credentials mode on the underlying fetch.
-      withCredentials: true,
+      // sets the credentials mode on the underlying fetch. Scoped to http(s)
+      // because it means nothing on the file:// and in-memory paths.
+      withCredentials: isHttp,
     });
+    // Swapping documents in place (a dropped or picked file replacing what's
+    // on screen) — release the old one only once pdf.js has stopped
+    // referencing it, or its in-flight render tasks throw.
+    const previous = this.pdfDocument;
     this.pdfDocument = await loadingTask.promise;
     this.pdfViewer.setDocument(this.pdfDocument);
     this.linkService.setDocument(this.pdfDocument, null);
+    if (previous) void previous.destroy().catch(() => {});
 
-    this.highlightStore = new HighlightStore(url);
+    this.highlightStore = new HighlightStore(src.identity);
     this.userHighlights = await this.highlightStore.load();
 
     await this.applyDocumentTitle();
@@ -974,6 +1012,16 @@ function isNotAPdfResponse(err: unknown): boolean {
   );
 }
 
+/** Last path segment of a URL, percent-decoded, for comparing against a
+ *  picked File's `name`. */
+function basename(url: string): string {
+  try {
+    return decodeURIComponent(new URL(url).pathname.split("/").pop() ?? "");
+  } catch {
+    return "";
+  }
+}
+
 // Ask the service worker to stand down for `file`, then re-navigate so the
 // browser renders whatever the server is actually serving (bot-check
 // challenge, login page, …). Once that's dealt with, the next load of the
@@ -981,6 +1029,10 @@ function isNotAPdfResponse(err: unknown): boolean {
 // the navigation away and back, so it guards against bouncing in a loop
 // when the URL keeps serving non-PDF content.
 async function requestNativeBypass(file: string): Promise<boolean> {
+  // Meaningless for local files: there is no server to render an alternative
+  // response, and with file access denied the re-navigation is blocked
+  // anyway, leaving a blank page. The service worker refuses these too.
+  if (file.startsWith("file:")) return false;
   const guardKey = `vimdf_bypassed:${file}`;
   const last = Number(sessionStorage.getItem(guardKey) ?? 0);
   if (Date.now() - last < 30_000) return false;
@@ -1000,29 +1052,92 @@ async function requestNativeBypass(file: string): Promise<boolean> {
   return true;
 }
 
-async function main(): Promise<void> {
-  // The DNR redirect builds `?file=<original-url>` with the original URL
-  // pasted in verbatim — no percent-encoding of its `?`, `&`, or `=` —
-  // because declarativeNetRequest's `\0` substitution doesn't re-encode.
-  // URLSearchParams would then split on the first `&` inside that URL
-  // and silently truncate everything after it (e.g. Notion's signed
-  // attachment URLs carry `?table=block&id=…&spaceId=…&userId=…&cache=v2`
-  // and lose all but `table`, returning HTTP 400). Grab the value as the
-  // raw tail of the search string instead.
+/**
+ * Work out what this page was opened to render.
+ *
+ * Two mechanisms can land a user here, and they're checked in this order:
+ *
+ *   1. **The declarativeNetRequest redirect** — `viewer.html?file=<url>`.
+ *      The original URL is pasted in verbatim, with no percent-encoding of
+ *      its `?`, `&` or `=`, because DNR's `\0` substitution doesn't re-encode.
+ *      URLSearchParams would split on the first `&` inside that URL and
+ *      silently truncate the rest (Notion's signed attachment URLs carry
+ *      `?table=block&id=…&spaceId=…&userId=…&cache=v2` and would lose all
+ *      but `table`, returning HTTP 400), so the value is taken as the raw
+ *      tail of the search string instead.
+ *   2. **`chrome.mimeHandler`** (Chrome 151+) — no query string at all;
+ *      Chrome hands us the already-fetched response. This is the path local
+ *      PDFs take, since it needs no file-scheme grant.
+ *
+ * `chrome.mimeHandler` exists on 151+ regardless of how we were opened, so
+ * the query string has to be checked first: a DNR-redirected page is not a
+ * handler frame and has no stream to ask for.
+ */
+type Resolved =
+  | { kind: "source"; source: PdfSource }
+  /** Nothing to render, and nothing to offer — viewer.html opened bare. */
+  | { kind: "none" }
+  /** Deliberately given back to Chrome's viewer; this frame is going away. */
+  | { kind: "handed-back" };
+
+async function resolveSource(): Promise<Resolved> {
   const m = location.search.match(/^\?file=(.*)$/);
-  const file = m ? m[1] : null;
-  if (!file) {
-    document.getElementById("statusLeft")!.textContent =
-      "No file specified. Use ?file=<url>";
-    return;
+  if (m) return { kind: "source", source: { url: m[1], identity: m[1] } };
+
+  const stream = await getStreamInfo();
+  if (!stream) return { kind: "none" };
+
+  // Registering as the PDF MIME handler means Chrome routes *every* PDF here,
+  // including ones the DNR rules deliberately let through. A response the
+  // server marked as a download is the case that matters: those are often
+  // one-shot endpoints, and the user asked for a file on disk, not a viewer.
+  // Hand it straight back — `excludedResponseHeaders` on the Content-Type
+  // rule below makes the same call for the redirect path.
+  const disposition = headerValue(stream.responseHeaders, "content-disposition");
+  if (/^\s*attachment/i.test(disposition)) {
+    abortAndFallbackToNativeHandler();
+    return { kind: "handed-back" };
   }
+
+  // The stream URL may be fetched exactly once, so read it to completion
+  // here rather than handing it to pdf.js, which would range-request it.
+  try {
+    const data = await (await fetch(stream.streamUrl)).arrayBuffer();
+    return { kind: "source", source: { data, identity: stream.originalUrl } };
+  } catch (err) {
+    // We've consumed our one shot at the bytes and have nothing to show.
+    // Chrome's own viewer can still re-request the document, so give it back
+    // rather than leaving the user on a blank page where the built-in viewer
+    // used to work.
+    console.error("VimDF: failed to read MIME handler stream:", err);
+    abortAndFallbackToNativeHandler();
+    return { kind: "handed-back" };
+  }
+}
+
+/** Case-insensitive lookup over `StreamInfo.responseHeaders`. */
+function headerValue(
+  headers: Record<string, string> | undefined,
+  name: string,
+): string {
+  for (const [k, v] of Object.entries(headers ?? {})) {
+    if (k.toLowerCase() === name) return v;
+  }
+  return "";
+}
+
+async function main(): Promise<void> {
+  const resolved = await resolveSource();
+  // The frame is being torn down by Chrome; don't paint anything over it.
+  if (resolved.kind === "handed-back") return;
+  const source = resolved.kind === "source" ? resolved.source : null;
 
   const settings = await loadSettings();
   applyTheme(settings.theme);
   applyCustomStyles(settings);
 
   const viewer = new Viewer(settings);
-  const marks = new MarksStore(file);
+  const marks = new MarksStore(source?.identity ?? "");
   await marks.load();
 
   const search = new SearchController(viewer);
@@ -1054,10 +1169,69 @@ async function main(): Promise<void> {
   void checkAndShowConflictWarning();
   void checkAndShowUpdateNotification();
 
+  // Reading a file the user hands us directly needs no permission of any
+  // kind, so this doubles as the recovery path for every local-file failure
+  // below and as a general "open a PDF" gesture.
+  //
+  // `expected` is the file:// URL we were *asked* for, when recovering one.
+  // Matching it back up keeps marks, highlights and last-page attached to the
+  // document; any other file is its own document, keyed by name and size
+  // because a picked File carries no path.
+  const openFile = async (picked: File, expected?: string): Promise<void> => {
+    const identity =
+      expected && basename(expected) === picked.name
+        ? expected
+        : // Shaped as a URL, not an opaque string, so the machinery that
+          // derives the window title and the Ctrl-S filename from a pathname
+          // keeps working. Size disambiguates same-named files.
+          `vimdf-local:///${picked.size}/${encodeURIComponent(picked.name)}`;
+    closeLocalFilePanel();
+    try {
+      const data = await picked.arrayBuffer();
+      await marks.retarget(identity);
+      await viewer.load({ data, identity });
+    } catch (err) {
+      document.getElementById("statusLeft")!.textContent =
+        `Error reading ${picked.name}: ${String(err)}`;
+    }
+  };
+  enableDropToOpen((picked) => void openFile(picked));
+
+  if (!source) {
+    // No `?file=` and no MIME-handler stream — viewer.html was opened on its
+    // own. Offer the picker rather than a dead end.
+    showLocalFilePanel({
+      reason: "no-document",
+      onPick: (picked) => void openFile(picked),
+    });
+    return;
+  }
+
+  const file = source.identity;
+  const isLocal = file.startsWith("file:");
+
   try {
-    await viewer.load(file);
+    await viewer.load(source);
   } catch (err) {
     console.error("Failed to load PDF:", err);
+    if (isLocal) {
+      // Every local read failure — permission denied, moved, deleted —
+      // reaches us as MissingPDFException, which `isNotAPdfResponse` would
+      // otherwise read as "the server sent an interstitial" and bounce out
+      // to Chrome's native viewer with no message at all. There is no server
+      // behind a file:// URL; say what actually went wrong and offer the
+      // picker, which works whatever the permission state.
+      const granted = await isAllowedFileSchemeAccess();
+      showLocalFilePanel({
+        reason: granted ? "unreadable" : "no-access",
+        fileUrl: file,
+        onPick: (picked) => void openFile(picked, file),
+      });
+      document.getElementById("statusLeft")!.textContent = granted
+        ? `Can't read ${displayPath(file)}`
+        : "No access to local files";
+      return;
+    }
     if (isNotAPdfResponse(err)) {
       // Hand the URL back to the browser so the interstitial / error page
       // the server is actually serving can render (and be acted on).

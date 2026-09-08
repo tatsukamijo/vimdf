@@ -76,7 +76,8 @@ Press `?` inside the viewer for the full keybinding reference.
 
 Install from the [**Chrome Web Store**](https://chromewebstore.google.com/detail/vimdf/ljjchallgifapclnhgoilmlijmncbahn).
 
-To open `file://` PDFs directly, visit `chrome://extensions`, find **VimDF**, click **Details**, and toggle **Allow access to file URLs**.
+On **Chrome 151+** that is the whole setup — local PDFs included. On older
+builds, see [Local PDFs](#local-pdfs).
 
 ### From source (developer mode)
 
@@ -92,13 +93,35 @@ Then in Chrome:
 1. Open `chrome://extensions`
 2. Enable **Developer mode** (top-right toggle)
 3. Click **Load unpacked** and select the `dist/` folder
-4. To open `file://` PDFs directly, click **Details** → toggle **Allow access to file URLs**
+
+> **Testing local PDFs?** Unpacked extensions are granted file access
+> automatically, Web Store installs are not. A `file://` regression will pass
+> in `dist/` and fail for every real user — so verify with **Details** →
+> **Allow access to file URLs** turned *off*.
 
 ## 💡 Usage
 
-Once installed, any PDF you open — over `http(s)` or `file://` (with file access allowed) — is automatically handled by VimDF. It catches PDFs whether they open as their own tab or are embedded in a page's `<iframe>` (e.g. a live-preview server), and whether or not the URL ends in `.pdf` (it also inspects the response `Content-Type`). Press `?` to see all keybindings.
+Once installed, any PDF you open — over `http(s)` or `file://` — is automatically handled by VimDF. It catches PDFs whether they open as their own tab or are embedded in a page's `<iframe>` (e.g. a live-preview server), and whether or not the URL ends in `.pdf` (it also inspects the response `Content-Type`). Press `?` to see all keybindings.
 
 Settings live in the extension's Options page (right-click the toolbar icon → Options). Theme, scroll steps, zoom step, page-scroll aliases, link-hint colors, status-bar colors, and per-document last-page persistence are all configurable and sync across Chrome profiles.
+
+### Local PDFs
+
+On **Chrome 151+**, VimDF registers itself as the browser's handler for
+`application/pdf`, so PDFs on your disk open in VimDF with nothing to
+configure. The Options page has an **Open PDFs in VimDF** switch if you ever
+want them back in Chrome's viewer.
+
+On **older builds** the only route to a `file://` URL is the
+**Allow access to file URLs** checkbox on VimDF's `chrome://extensions` card.
+Chrome leaves it off for every Web Store install and refuses to evaluate any
+interception rule against a local file until it is on — silently, which is
+why a local PDF used to just open in Chrome's viewer with no explanation.
+VimDF now says so, and offers a way to the checkbox.
+
+Either way, you can always **drop a PDF onto the viewer** or pick one from
+the prompt. Reading a file you hand over directly needs no permission at all,
+and the document keeps its marks, highlights and last page.
 
 ## 🛠 Development
 

@@ -29,6 +29,17 @@ export class MarksStore {
     this.marks = (result[this.key] as MarkMap | undefined) ?? {};
   }
 
+  /**
+   * Point at a different document and reload its marks. Used when the viewer
+   * swaps documents in place rather than navigating — dropping a PDF onto the
+   * window, or picking one from the local-file prompt — which would otherwise
+   * keep writing the new document's marks under the old document's key.
+   */
+  async retarget(pdfUrl: string): Promise<void> {
+    this.pdfUrl = pdfUrl;
+    await this.load();
+  }
+
   set(name: string, pos: MarkPosition): void {
     this.marks[name] = pos;
     void chrome.storage.local.set({ [this.key]: this.marks });
