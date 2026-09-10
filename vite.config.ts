@@ -29,7 +29,7 @@ const MIME_TYPES_HANDLER = {
 const manifestConfig = {
   manifest_version: 3,
   name: "VimDF",
-  version: "0.5.0",
+  version: "0.5.1",
   mime_types_handler: MIME_TYPES_HANDLER,
   description: "Navigate PDFs with Vim keybindings",
   author: { email: "tatsukamijo@icloud.com" },

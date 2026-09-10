@@ -5,6 +5,25 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.5.1] - 2026-09-10
+
+### Fixed
+- **`y` now yanks on publisher sites that wrap the PDF in an iframe** — IEEE
+  Xplore and every site shaped like it. `/stamp/stamp.jsp` is an HTML shell
+  whose whole body is one full-viewport `<iframe>` pointing at the PDF, so
+  VimDF's viewer commits inside that iframe rather than as the tab's own
+  document. Chrome disables `navigator.clipboard.writeText()` by default in
+  a frame cross-origin to its parent — the `clipboard-write` permissions
+  policy defaults to `'self'`, and only the *embedding* page can grant it
+  back with `allow="clipboard-write"`, which these pages don't. No extension
+  permission can override it, because the check runs before any extension
+  permission is consulted. VimDF now falls back to a copy path that isn't
+  policy-gated, so yanking works in an embedded viewer as it does in a
+  top-level one
+- **A failed yank no longer throws the selection away.** `y` used to drop
+  back to caret mode either way, so a blocked copy cost the selection too;
+  it now stays put for a retry
+
 ## [0.5.0] - 2026-09-08
 
 ### Added
