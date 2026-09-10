@@ -21,12 +21,16 @@
  *  gg / G / {n}G  — first / last / nth page first span
  *
  * Visual ops (exit to insert after completing):
- *  y  — yank to clipboard (linewise adds newline separators)
+ *  y  — yank to clipboard (linewise adds newline separators); falls back to
+ *       a synchronous copy where the embedder's permissions policy blocks
+ *       the async Clipboard API, and keeps the selection if even that
+ *       fails — see ./clipboard.ts
  *  H  — save selection as persistent highlight
  */
 
 import type { Viewer } from "./viewer";
 import type { Highlight, HighlightRect } from "./highlights";
+import { copyText } from "./clipboard";
 
 export type CaretModeKind =
   | "off"
@@ -268,7 +272,13 @@ export class CaretMode {
 
     if (k === "y") {
       e.preventDefault();
-      void this.yankSelection().then(() => this.toInsert());
+      // Hold the selection when the copy actually failed: toInsert() clears
+      // the anchor, and throwing away the selection is the difference
+      // between a retry and a re-drag. (The "not focused" flavour of
+      // failure clears as soon as the user clicks in, so retrying works.)
+      void this.yankSelection().then((r) => {
+        if (r !== "failed") this.toInsert();
+      });
       return;
     }
     if (k === "H") {
@@ -891,21 +901,20 @@ export class CaretMode {
 
   // --- Selection extraction ---
 
-  private async yankSelection(): Promise<void> {
-    if (!this.caret || !this.anchor) return;
+  private async yankSelection(): Promise<"copied" | "empty" | "failed"> {
+    if (!this.caret || !this.anchor) return "empty";
     const text = this.selectionText();
     if (!text) {
       this.viewer.setStatusCenter("empty selection");
       setTimeout(() => this.viewer.clearStatusCenter(), 1000);
-      return;
+      return "empty";
     }
-    try {
-      await navigator.clipboard.writeText(text);
-      this.viewer.setStatusCenter(`yanked ${text.length} chars`);
-    } catch {
-      this.viewer.setStatusCenter("yank failed (clipboard blocked)");
-    }
+    const ok = await copyText(text);
+    this.viewer.setStatusCenter(
+      ok ? `yanked ${text.length} chars` : "yank failed (clipboard blocked)",
+    );
     setTimeout(() => this.viewer.clearStatusCenter(), 1200);
+    return ok ? "copied" : "failed";
   }
 
   private selectionText(): string {
