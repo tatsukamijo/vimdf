@@ -7,6 +7,12 @@ import {
   type Settings,
   type Theme,
 } from "../common/settings";
+import {
+  isAllowedFileSchemeAccess,
+  isMimeHandlerSupported,
+  isPdfHandlingEnabled,
+  setPdfHandlingEnabled,
+} from "../viewer/mime-handler";
 
 const fields = {
   theme: document.getElementById("theme") as HTMLSelectElement,
@@ -322,3 +328,80 @@ resetBtn.addEventListener("click", async () => {
 });
 
 void loadSettings().then(apply);
+
+// --- Local files -----------------------------------------------------------
+//
+// Two independent things decide whether a local PDF opens in VimDF, and the
+// difference is invisible from inside the extension unless we spell it out:
+//
+//   - Chrome 151+ registers VimDF as the `application/pdf` handler (the
+//     `mime_types_handler` manifest key). Local files just work, and the
+//     "Allow access to file URLs" checkbox is irrelevant.
+//   - Before that, the only route is the declarativeNetRequest redirect, and
+//     Chromium refuses to evaluate *any* rule against a `file://` request
+//     unless that checkbox is ticked. It's off by default for every Web Store
+//     install and on by default for unpacked ones — which is exactly why this
+//     works in a dev build and not in the shipped extension.
+//
+// The checkbox can only be set by the user, on VimDF's own extensions page,
+// so the most this page can do is report the state and offer a way there.
+
+const fileAccessStatus = document.getElementById("fileAccessStatus")!;
+const fileAccessDetail = document.getElementById("fileAccessDetail")!;
+const openExtensionsPageBtn = document.getElementById(
+  "openExtensionsPage",
+) as HTMLButtonElement;
+const pdfHandlerSection = document.getElementById("pdfHandlerSection")!;
+const pdfHandlerEnabled = document.getElementById(
+  "pdfHandlerEnabled",
+) as HTMLInputElement;
+
+openExtensionsPageBtn.addEventListener("click", () => {
+  void chrome.tabs.create({
+    url: `chrome://extensions/?id=${chrome.runtime.id}`,
+  });
+});
+
+pdfHandlerEnabled.addEventListener("change", () => {
+  void setPdfHandlingEnabled(pdfHandlerEnabled.checked).then(() =>
+    flashStatus(pdfHandlerEnabled.checked ? "VimDF handles PDFs" : "Handing PDFs to Chrome"),
+  );
+});
+
+async function refreshLocalFileStatus(): Promise<void> {
+  const viaMimeHandler = isMimeHandlerSupported();
+  const granted = await isAllowedFileSchemeAccess();
+
+  if (viaMimeHandler) {
+    pdfHandlerSection.hidden = false;
+    pdfHandlerEnabled.checked = await isPdfHandlingEnabled();
+    fileAccessStatus.innerHTML =
+      "<b>Local PDFs work.</b> Chrome hands them straight to VimDF, " +
+      "so nothing needs enabling.";
+    fileAccessDetail.textContent = granted
+      ? "“Allow access to file URLs” is also on, which VimDF no longer needs."
+      : "";
+    openExtensionsPageBtn.hidden = true;
+    return;
+  }
+
+  if (granted) {
+    fileAccessStatus.innerHTML =
+      "<b>Local PDFs work.</b> “Allow access to file URLs” is enabled.";
+    fileAccessDetail.textContent = "";
+    openExtensionsPageBtn.hidden = true;
+    return;
+  }
+
+  fileAccessStatus.innerHTML =
+    "<b>Local PDFs won’t open.</b> This build of Chrome needs " +
+    "<b>Allow access to file URLs</b>, which is off by default.";
+  fileAccessDetail.innerHTML =
+    "Turn it on below, then reopen the PDF. Chrome reloads VimDF when you " +
+    "flip it, so any open VimDF tabs will close. You can also drop a PDF " +
+    "onto the viewer, or pick one from the prompt it shows — that needs no " +
+    "permission at all.";
+  openExtensionsPageBtn.hidden = false;
+}
+
+void refreshLocalFileStatus();

@@ -726,3 +726,126 @@ body.sidebar-open #viewerContainer {
   display: none;
 }
 
+
+/* --- Local-file panel -----------------------------------------------------
+   Shown when VimDF has a local PDF to display but can't read it (Chrome <
+   151 without "Allow access to file URLs"), when a local file has gone
+   missing, or when viewer.html is opened with no document. Full-bleed rather
+   than a modal over the document: in every one of those cases there is no
+   document underneath to see. */
+
+#localFilePanel {
+  position: fixed;
+  inset: 0;
+  background: var(--bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 45;
+  padding: 24px;
+}
+
+#localFilePanel .lf-box {
+  width: min(560px, 92vw);
+  color: var(--fg);
+  font-family:
+    system-ui,
+    -apple-system,
+    "Segoe UI",
+    sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+#localFilePanel h1 {
+  margin: 0 0 12px;
+  font-size: 19px;
+  font-weight: 600;
+}
+
+#localFilePanel .lf-path {
+  margin: 0 0 14px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--bar-bg);
+  color: var(--bar-fg);
+  font-family:
+    "SFMono-Regular", Menlo, Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+  /* Long paths truncate from the left so the filename stays visible. */
+  direction: rtl;
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#localFilePanel .lf-blurb {
+  margin: 0 0 18px;
+  opacity: 0.85;
+}
+
+#localFilePanel code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bar-bg);
+  font-size: 12px;
+}
+
+#localFilePanel .lf-note {
+  margin: 8px 0 0;
+  font-size: 12px;
+  opacity: 0.6;
+}
+
+#localFilePanel .lf-grant {
+  margin-bottom: 22px;
+  padding-bottom: 20px;
+  border-bottom: 1px solid var(--page-border);
+}
+
+#localFilePanel button,
+#localFilePanel .lf-pick-btn {
+  display: inline-block;
+  padding: 8px 16px;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+}
+
+#localFilePanel button:hover,
+#localFilePanel .lf-pick-btn:hover {
+  background: var(--accent);
+  color: var(--bg);
+}
+
+#localFilePanel button:focus-visible,
+#localFilePanel .lf-pick-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The real input is driven through its <label>; keep it focusable for
+   keyboard users rather than display:none, which would take it out of the
+   tab order entirely. */
+#localFilePanel input[type="file"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* Drag feedback — a PDF can be dropped anywhere, panel or document. */
+body.vimdf-dragging::after {
+  content: "";
+  position: fixed;
+  inset: 8px;
+  border: 2px dashed var(--accent);
+  border-radius: 10px;
+  pointer-events: none;
+  z-index: 60;
+}
