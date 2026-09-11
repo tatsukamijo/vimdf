@@ -51,11 +51,14 @@ VimDF replaces Chrome's built-in PDF viewer with a modal, keyboard-driven one. I
 - **Jump list** — `Ctrl-O` / `Ctrl-I` / `Tab` to traverse your jump history (like Vim's `''` stack)
 - **Outline sidebar** — `o` toggles table of contents, auto-focuses the section you're currently reading; `j`/`k` moves selection, `Enter` jumps
 - **Caret mode** — `i` enters a Vim-modal caret over the text layer:
-  - `h`/`l`/`w`/`b`/`e` for char/word motion
+  - `h`/`l`/`w`/`b`/`e` for char/word motion, `W`/`B`/`E` for WORD motion
   - `j`/`k` column-aware line motion, `Ctrl-h`/`Ctrl-l` for column jumps
-  - `0`/`$` line ends, `zz`/`zt`/`zb` caret-recentering
+  - `0`/`^`/`$` line ends, `zz`/`zt`/`zb` caret-recentering
   - `v` / `V` / `Ctrl-V` for char / line / block VISUAL modes
   - `y` yank to clipboard, `H` save selection as persistent highlight
+  - both operators take a motion or a text object, with counts:
+    `yiw`, `yaw`, `yw`, `y$`, `2y3w`, `yy`, `Y` (= `y$`), and `Hiw` / `HH`
+    to highlight the same ranges; `viw` / `vaw` select one in VISUAL
 - **Download / Print** — `Ctrl-S` opens a finder-styled save dialog (defaults to `~/Downloads/`, remembers your last subfolder, `Ctrl-↵` for a native "Save as…" picker). `Ctrl-P` prints with page sizes matched to the PDF
 
   <p align="center">

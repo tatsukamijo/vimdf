@@ -319,8 +319,10 @@ export class VimController {
     if (this.caretMode.isActive) {
       // Let the jump-list navigate even inside insert mode — useful after
       // following a citation link. Visual modes are left alone so the
-      // anchor isn't lost.
-      if (this.caretMode.isInsert) {
+      // anchor isn't lost, and so is a pending operator: Ctrl-O with `y`
+      // armed must reach caret mode, which aborts it, rather than jumping
+      // the caret out from under the motion the operator is waiting for.
+      if (this.caretMode.isInsert && !this.caretMode.isOperatorPending) {
         if (e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
           const lk = key.toLowerCase();
           if (lk === "o") {

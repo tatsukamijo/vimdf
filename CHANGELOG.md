@@ -5,6 +5,38 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-09-11
+
+### Added
+- **`y` and `H` now take a motion or a text object**, in caret mode and not
+  just over a visual selection. `yiw` yanks the word under the caret, `yaw`
+  takes its trailing space too, `yw` / `ye` / `yb` / `y0` / `y$` / `yj` / `yk`
+  operate over the matching motion, `yy` takes whole rows and `Y` yanks to the
+  end of the row (Neovim's default, not classic Vim's `Y` == `yy`). Counts
+  work on both sides and multiply, so `2y3w` takes six words. Every form works
+  with `H` as well, which saves the same range as a highlight — `Hiw`, `HH`
+- **`iw` / `aw` / `iW` / `aW` in visual mode.** `viw` selects the word under
+  the caret; from V-LINE it drops to charwise, as in Vim. The object replaces
+  the selection rather than extending it
+- **`W` / `B` / `E` motions** (punctuation folded into the word) and **`^`**
+  as a row-start motion
+- **The half-typed command is now visible** next to the mode label, the way
+  Vim's `showcmd` shows it, and a completed operator briefly paints the range
+  it took. `Esc` cancels a pending command and stays in caret mode
+
+### Fixed
+- **`{n}G` jumped to the last page instead of page n.** A bare `Shift`
+  keydown reaches the caret dispatcher, where it fell through to the count
+  consumer and cleared the digits — so the Shift needed to type `G` always
+  ate the count that preceded it
+
+### Notes
+- Three places the text layer can't match Vim exactly, all deliberate: `j`/`k`
+  are geometric display-line moves, so a linewise yank over them is really
+  Vim's `gj`/`gk`; a linewise yank appends no trailing newline, because the
+  document contains no newline character to take; and `aw` synthesises its
+  trailing space when pdf.js left no space character between two words
+
 ## [0.5.1] - 2026-09-10
 
 ### Fixed

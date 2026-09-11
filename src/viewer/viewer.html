@@ -113,9 +113,10 @@
           <tr><td>h / l</td><td>Prev / next character</td></tr>
           <tr><td>w / b</td><td>Next / prev word start</td></tr>
           <tr><td>e</td><td>Next word end</td></tr>
+          <tr><td>W / B / E</td><td>Same, punctuation included (WORD)</td></tr>
           <tr><td>j / k</td><td>Next / prev line (column-aware)</td></tr>
           <tr><td>Ctrl-l / Ctrl-h</td><td>Jump right / left column</td></tr>
-          <tr><td>0 / $</td><td>Line start / end</td></tr>
+          <tr><td>0 / ^ / $</td><td>Line start / start / end</td></tr>
           <tr><td>gg / G</td><td>First / last page (caret)</td></tr>
           <tr><td>{n}G</td><td>Go to page n (caret)</td></tr>
           <tr><td>zz / zt / zb</td><td>Scroll caret to center / top / bottom</td></tr>
@@ -124,8 +125,16 @@
           <tr><td>V</td><td>Toggle VISUAL LINE</td></tr>
           <tr><td>Ctrl-V / Ctrl-Q</td><td>Toggle VISUAL BLOCK</td></tr>
           <tr><td>y</td><td>Yank selection to clipboard</td></tr>
+          <tr><td>y{motion}</td><td>Yank over a motion (yw ye yb y0 y$ yj yk)</td></tr>
+          <tr><td>yiw / yaw</td><td>Yank inner / a word</td></tr>
+          <tr><td>yiW / yaW</td><td>Yank inner / a WORD (punctuation included)</td></tr>
+          <tr><td>yy / {n}yy</td><td>Yank whole row(s)</td></tr>
+          <tr><td>Y</td><td>Yank to end of row (= y$)</td></tr>
+          <tr><td>{n}y{motion}</td><td>Counts multiply (2y3w = six words)</td></tr>
+          <tr><td>viw / vaw</td><td>Select inner / a word (replaces selection)</td></tr>
           <tr><td>H</td><td>Save selection as highlight</td></tr>
-          <tr><td>Esc</td><td>Back to normal</td></tr>
+          <tr><td>H{motion} / Hiw / HH</td><td>Highlight over a motion or object</td></tr>
+          <tr><td>Esc</td><td>Cancel a pending command, else back to normal</td></tr>
           <tr><td>right-click</td><td>Remove a highlight</td></tr>
         </table>
         <p class="hint">Press ? or Esc to close.</p>
