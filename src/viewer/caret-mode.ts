@@ -1040,7 +1040,7 @@ export class CaretMode {
   }
 
   private clearOverlays(): void {
-    document
+    this.viewer.viewerEl
       .querySelectorAll(".vim-caret, .vim-selection")
       .forEach((el) => el.remove());
   }
@@ -1540,7 +1540,7 @@ export class CaretMode {
   // --- DOM accessors ---
 
   private pageElement(pageIdx: number): HTMLElement | null {
-    return document.querySelector(
+    return this.viewer.viewerEl.querySelector(
       `.page[data-page-number="${pageIdx + 1}"]`,
     ) as HTMLElement | null;
   }

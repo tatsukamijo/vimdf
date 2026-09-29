@@ -18,7 +18,8 @@ export class ContinuousScroll {
   private speed = 0;
   private lastTs = 0;
 
-  constructor(private container: HTMLElement) {}
+  // Resolved per frame so the scroll follows whichever pane has focus.
+  constructor(private getContainer: () => HTMLElement) {}
 
   start(axis: Axis, direction: 1 | -1): void {
     if (this.rafId !== null && this.axis === axis && this.direction === direction) {
@@ -48,10 +49,11 @@ export class ContinuousScroll {
     this.lastTs = now;
     this.speed = Math.min(MAX_SPEED, this.speed + ACCELERATION * dt);
     const delta = this.direction * this.speed * dt;
+    const container = this.getContainer();
     if (this.axis === "y") {
-      this.container.scrollTop += delta;
+      container.scrollTop += delta;
     } else {
-      this.container.scrollLeft += delta;
+      container.scrollLeft += delta;
     }
     this.rafId = requestAnimationFrame(this.tick);
   };

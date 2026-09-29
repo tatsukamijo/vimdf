@@ -11,6 +11,11 @@
       <div id="viewer" class="pdfViewer"></div>
     </div>
 
+    <!-- Second view onto the same document, shown by Ctrl-w v / Ctrl-w s. -->
+    <div id="refContainer" tabindex="0" hidden>
+      <div id="refViewer" class="pdfViewer"></div>
+    </div>
+
     <aside id="sidebar" hidden>
       <header>Outline</header>
       <div id="outlineTree"></div>
@@ -63,6 +68,14 @@
           <tr><td>g0 / g$</td><td>First / last tab</td></tr>
           <tr><td>t</td><td>New tab</td></tr>
           <tr><td>x</td><td>Close current tab</td></tr>
+
+          <tr><th colspan="2">Split view</th></tr>
+          <tr><td>Ctrl-w v / Ctrl-w s</td><td>Split side by side / stacked, starting at the current view</td></tr>
+          <tr><td>Ctrl-w w / Ctrl-w h j k l</td><td>Switch pane / move to the pane in that direction</td></tr>
+          <tr><td>Ctrl-w c / Ctrl-w o</td><td>Close this pane / keep only this pane</td></tr>
+          <tr><td>Ctrl-w x</td><td>Swap the two panes' views</td></tr>
+          <tr><td>W (instead of Ctrl-w)</td><td>Same commands, for Windows / Linux, where Chrome keeps Ctrl-W</td></tr>
+          <tr><td>(second pane)</td><td>Scroll, zoom, gg/G, marks and T (finder) act on the focused pane; i, f, /, o and Ctrl-O return to the main one</td></tr>
 
           <tr><th colspan="2">Search</th></tr>
           <tr><td>/</td><td>Search</td></tr>

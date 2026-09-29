@@ -163,6 +163,57 @@ body.sidebar-open #viewerContainer {
   left: 280px;
 }
 
+/* Split view (Ctrl-w v / Ctrl-w s). pdf.js requires each container to stay
+   absolutely positioned, so a split just moves the two containers' edges.
+   --pane-left tracks the outline sidebar so both panes clear it. */
+body.sidebar-open {
+  --pane-left: 280px;
+}
+
+#refContainer {
+  position: absolute;
+  inset: 0 0 24px var(--pane-left, 0px);
+  overflow: auto;
+  outline: none;
+  scroll-behavior: auto;
+}
+
+#refContainer[hidden] {
+  display: none;
+}
+
+#refViewer {
+  position: relative;
+}
+
+body.split-vertical #viewerContainer {
+  right: calc((100% - var(--pane-left, 0px)) / 2);
+}
+
+body.split-vertical #refContainer {
+  left: calc(var(--pane-left, 0px) + (100% - var(--pane-left, 0px)) / 2);
+  border-left: 1px solid #000;
+}
+
+body.split-horizontal #viewerContainer {
+  bottom: calc(50% + 12px);
+}
+
+body.split-horizontal #refContainer {
+  top: calc(50% - 12px);
+  border-top: 1px solid #000;
+}
+
+/* Only mark focus while split; a lone pane needs no indicator. IDs so this
+   outranks the containers' own `outline: none`. */
+body.split-vertical #viewerContainer.pane-focused,
+body.split-vertical #refContainer.pane-focused,
+body.split-horizontal #viewerContainer.pane-focused,
+body.split-horizontal #refContainer.pane-focused {
+  outline: 2px solid rgba(var(--vim-accent-rgb), 0.6);
+  outline-offset: -2px;
+}
+
 /* Search bar */
 #searchbar {
   position: absolute;
