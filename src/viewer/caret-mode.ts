@@ -1270,19 +1270,29 @@ export class CaretMode {
   }
 
   /**
+   * Do two adjacent carets belong to the same word for w/b/e? Same char
+   * kind is not enough: getPageSpans drops whitespace-only spans, so the
+   * last word of one row and the first of the next arrive back to back
+   * with no space between them. seamIsGap supplies the missing break.
+   */
+  private sameRun(a: Caret, b: Caret, big: boolean): boolean {
+    if (this.runKindAt(a, big) !== this.runKindAt(b, big)) return false;
+    return !this.seamIsGap(a, b);
+  }
+
+  /**
    * Vim `w`: advance to the start of the next word. Words are runs of
    * keyword chars ([A-Za-z0-9_]); punctuation counts as its own run.
    * We walk char-by-char across spans so we don't skip an entire line
    * (PDF.js text spans are often whole lines/phrases).
    */
   private wordNext(c: Caret, big = false): Caret {
-    const startKind = this.runKindAt(c, big);
     let cur = c;
     // Skip the rest of the current run.
     while (true) {
       const next = this.moveRight(cur);
       if (sameCaret(next, cur)) return cur;
-      if (this.runKindAt(next, big) !== startKind) { cur = next; break; }
+      if (!this.sameRun(cur, next, big)) { cur = next; break; }
       cur = next;
     }
     // Skip whitespace until we hit the next word/punct run.
@@ -1305,11 +1315,10 @@ export class CaretMode {
       if (sameCaret(prev, cur)) return cur;
       cur = prev;
     }
-    const kind = this.runKindAt(cur, big);
     while (true) {
       const prev = this.moveLeft(cur);
       if (sameCaret(prev, cur)) return cur;
-      if (this.runKindAt(prev, big) !== kind) return cur;
+      if (!this.sameRun(prev, cur, big)) return cur;
       cur = prev;
     }
   }
@@ -1325,11 +1334,10 @@ export class CaretMode {
       if (sameCaret(next, cur)) return cur;
       cur = next;
     }
-    const kind = this.runKindAt(cur, big);
     while (true) {
       const next = this.moveRight(cur);
       if (sameCaret(next, cur)) return cur;
-      if (this.runKindAt(next, big) !== kind) return cur;
+      if (!this.sameRun(cur, next, big)) return cur;
       cur = next;
     }
   }
