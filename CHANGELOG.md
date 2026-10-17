@@ -5,6 +5,17 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.1] - 2026-10-17
+
+### Fixed
+- **`w` / `b` / `e` ran across line ends into the next row's first word.**
+  pdf.js drops the whitespace between two rows, so the last word of one row
+  and the first of the next looked like a single word — `e` on "Srinivasa"
+  landed at the end of "University" on the line below. Word motions now
+  break where the text layer shows a gap or a row change, the same rule
+  `iw` / `aw` already used. Covers `W` / `B` / `E` and operator forms like
+  `yw` / `ye`
+
 ## [0.6.0] - 2026-09-11
 
 ### Added
