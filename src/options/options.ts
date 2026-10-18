@@ -31,6 +31,9 @@ const fields = {
   outlineOBehavior: document.getElementById(
     "outlineOBehavior",
   ) as HTMLSelectElement,
+  swapTabDirection: document.getElementById(
+    "swapTabDirection",
+  ) as HTMLInputElement,
   halfPageDownKey: document.getElementById(
     "halfPageDownKey",
   ) as HTMLInputElement,
@@ -167,6 +170,7 @@ function apply(settings: Settings): void {
   applyInitialZoom(settings.initialZoom);
   fields.rememberLastPage.checked = settings.rememberLastPage;
   fields.outlineOBehavior.value = settings.outlineOBehavior;
+  fields.swapTabDirection.checked = settings.swapTabDirection;
   applyKey(fields.halfPageDownKey, settings.halfPageDownKey);
   applyKey(fields.halfPageUpKey, settings.halfPageUpKey);
   applyKey(fields.fullPageDownKey, settings.fullPageDownKey);
@@ -228,6 +232,7 @@ function readForm(): Partial<Settings> {
     initialZoom: readInitialZoom(),
     rememberLastPage: fields.rememberLastPage.checked,
     outlineOBehavior: fields.outlineOBehavior.value as OutlineOBehavior,
+    swapTabDirection: fields.swapTabDirection.checked,
     halfPageDownKey: fields.halfPageDownKey.dataset.raw ?? "",
     halfPageUpKey: fields.halfPageUpKey.dataset.raw ?? "",
     fullPageDownKey: fields.fullPageDownKey.dataset.raw ?? "",
