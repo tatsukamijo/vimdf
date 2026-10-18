@@ -22,6 +22,10 @@ export interface Settings {
   // "toggle" closes it; "refocus" re-enters outline navigation (close with
   // another `o` while focused, release focus with Esc / Ctrl-h).
   outlineOBehavior: OutlineOBehavior;
+  // J/K follow Vimium on a horizontal tab strip: J = previous (left),
+  // K = next (right). With vertical tabs that reads upside down — previous
+  // is above — so this flips them to J = next (down), K = previous (up).
+  swapTabDirection: boolean;
   // Optional non-modifier aliases for the Ctrl-{d,u,f,b} page-scroll commands.
   // Empty string disables the alias (only the Ctrl version works). Examples:
   //   " "  -> Space triggers half-page down
@@ -51,6 +55,7 @@ export const DEFAULT_SETTINGS: Settings = {
   initialZoom: "page-fit",
   rememberLastPage: true,
   outlineOBehavior: "toggle",
+  swapTabDirection: false,
   halfPageDownKey: "d",
   halfPageUpKey: "u",
   fullPageDownKey: "",

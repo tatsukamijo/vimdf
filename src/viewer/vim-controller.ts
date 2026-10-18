@@ -568,11 +568,11 @@ export class VimController {
 
       case "J":
         e.preventDefault();
-        this.sendTabCommand("prev");
+        this.sendTabCommand(this.viewer.settings.swapTabDirection ? "next" : "prev");
         return;
       case "K":
         e.preventDefault();
-        this.sendTabCommand("next");
+        this.sendTabCommand(this.viewer.settings.swapTabDirection ? "prev" : "next");
         return;
       case "H":
         e.preventDefault();
