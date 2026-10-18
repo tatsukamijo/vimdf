@@ -5,6 +5,15 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.2] - 2026-10-18
+
+### Added
+- **Option to swap the `J` / `K` tab direction**, for vertical tabs. `J` / `K`
+  follow Vimium's horizontal-strip convention — `J` previous, `K` next — which
+  reads upside down in a vertical tab list, where the previous tab sits above.
+  Ticking "Swap J / K tab direction" in Options makes `J` move to the tab below
+  and `K` to the one above. Takes effect immediately in open PDFs
+
 ## [0.6.1] - 2026-10-17
 
 ### Fixed
