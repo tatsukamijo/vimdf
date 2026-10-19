@@ -16,9 +16,9 @@ const SPLIT_CLASSES: Record<SplitDirection, string> = {
  * equation in sight while reading elsewhere.
  *
  * It shares the main pane's PDFDocumentProxy, so opening it costs rendering
- * only, not a second parse. It deliberately skips the text layer: caret
- * mode, search and link hints stay with the main pane, and the reference
- * pane only scrolls, zooms and jumps.
+ * only, not a second parse. It renders a text layer so caret mode works
+ * here too; search and the outline stay with the main pane, which owns the
+ * find controller.
  */
 export class RefPane extends Pane {
   private direction: SplitDirection | null = null;
@@ -30,7 +30,7 @@ export class RefPane extends Pane {
     super({
       container: document.getElementById("refContainer") as HTMLDivElement,
       viewerEl: document.getElementById("refViewer") as HTMLDivElement,
-      textLayerMode: 0,
+      textLayerMode: 1,
       withFind: false,
     });
     this.eventBus.on("pagechanging", () => main.updateStatus());

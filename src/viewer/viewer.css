@@ -215,7 +215,8 @@ body.split-horizontal #refContainer.pane-focused {
 }
 
 /* Search bar */
-#searchbar {
+#searchbar,
+#cmdline {
   position: absolute;
   bottom: 24px;
   left: 0;
@@ -232,16 +233,19 @@ body.split-horizontal #refContainer.pane-focused {
   z-index: 20;
 }
 
-#searchbar[hidden] {
+#searchbar[hidden],
+#cmdline[hidden] {
   display: none;
 }
 
-#searchPrompt {
+#searchPrompt,
+#cmdPrompt {
   color: var(--accent);
   font-weight: bold;
 }
 
-#searchInput {
+#searchInput,
+#cmdInput {
   flex: 1;
   background: transparent;
   border: none;

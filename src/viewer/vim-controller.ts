@@ -25,9 +25,10 @@ import { HintController } from "./hints";
 import { JumpList, type JumpPos } from "./jump-list";
 import { CaretMode } from "./caret-mode";
 import { Finder } from "./finder";
+import { CommandLine } from "./cmdline";
 import { RefPane, type SplitDirection } from "./ref-pane";
 
-type Mode = "normal" | "search" | "hint" | "finder";
+type Mode = "normal" | "search" | "hint" | "finder" | "command";
 type ScrollKey = "j" | "k" | "h" | "l";
 
 export class VimController {
@@ -47,7 +48,10 @@ export class VimController {
 
   private scroller: ContinuousScroll;
   private hints: HintController;
-  private jumps = new JumpList();
+  private cmdline: CommandLine;
+  // One jump list per pane, as Vim keeps one per window: Ctrl-O in the
+  // reference pane walks back through that pane's own jumps.
+  private jumpLists = new Map<Pane, JumpList>();
   private caretMode: CaretMode;
   private finder: Finder;
   private ref: RefPane;
@@ -60,8 +64,15 @@ export class VimController {
   ) {
     this.ref = new RefPane(viewer);
     this.scroller = new ContinuousScroll(() => this.pane.container);
-    this.hints = new HintController(viewer);
-    this.caretMode = new CaretMode(viewer);
+    this.hints = new HintController();
+    this.cmdline = new CommandLine(
+      (cmd) => this.runCommand(cmd),
+      () => {
+        this.mode = "normal";
+        this.pane.container.focus();
+      },
+    );
+    this.caretMode = new CaretMode(viewer, () => this.pane);
     this.finder = new Finder(viewer, marks, {
       recordJump: () => this.jumps.record(this.snapshot()),
       getPane: () => this.pane,
@@ -71,7 +82,14 @@ export class VimController {
         this.pane.container.focus();
       },
     });
-    viewer.eventBus.on("pagerendered", () => this.caretMode.render());
+    // Only the caret's own pane: render() scrolls the caret into view, and
+    // the other pane rendering must not pull it back.
+    viewer.eventBus.on("pagerendered", () => {
+      if (this.pane === this.viewer) this.caretMode.render();
+    });
+    this.ref.eventBus.on("pagerendered", () => {
+      if (this.pane === this.ref) this.caretMode.render();
+    });
   }
 
   /**
@@ -241,6 +259,7 @@ export class VimController {
 
     if (this.mode === "search") return; // search input owns events
     if (this.mode === "finder") return; // finder input owns events
+    if (this.mode === "command") return; // command-line input owns events
 
     // Ctrl-w starts a window command, in any mode. Chrome reserves Ctrl-W
     // for closing the tab on Windows and Linux, so the page never sees it
@@ -257,12 +276,46 @@ export class VimController {
       return;
     }
 
+    // vim-tmux-navigator style: Ctrl-{h,j,k,l} is Ctrl-w {h,j,k,l} without
+    // the prefix. Checked before the main-pane gate, which would otherwise
+    // send the ref pane's Ctrl-h into the outline. Claimed only when focus
+    // actually moves, so with no pane that way Chrome keeps Ctrl-L / Ctrl-J /
+    // Ctrl-H / Ctrl-K on Windows and Linux, and a scroll alias recorded as
+    // e.g. "Ctrl+j" still wins. Caret mode and a focused outline keep their
+    // own Ctrl-h / Ctrl-l; Ctrl-w still switches panes from there.
+    if (
+      e.ctrlKey &&
+      !e.shiftKey &&
+      !e.altKey &&
+      !e.metaKey &&
+      "hjkl".includes(key.toLowerCase()) &&
+      key.length === 1 &&
+      this.pendingMark === null &&
+      !this.pendingG &&
+      !this.caretMode.isActive &&
+      !isOutlineFocusActive() &&
+      !this.matchesScrollAlias(e)
+    ) {
+      const target = this.paneToward(key.toLowerCase());
+      if (target && target !== (this.refFocused ? "ref" : "main")) {
+        e.preventDefault();
+        // A count typed before the switch belongs to neither pane.
+        this.pendingCount = "";
+        this.pendingZ = false;
+        this.focusPane(target);
+        return;
+      }
+    }
+
     // Features that only the main pane has. From the reference pane, move
-    // focus back first so `i`, `/`, `f`… act on the pane they belong to.
+    // focus back first so `/`, `n`, `o`… act on the pane they belong to.
     // Not while a mark or g prefix waits for its second key: `mf` sets
-    // mark f, it doesn't start link hints.
+    // mark f, it doesn't start a search. Nor during caret mode, which takes
+    // these keys itself; switching panes would exit it and drop a visual
+    // selection.
     if (
       this.refFocused &&
+      !this.caretMode.isActive &&
       this.pendingMark === null &&
       !this.pendingG &&
       isMainPaneKey(e)
@@ -372,9 +425,16 @@ export class VimController {
         }
         return;
       }
+      // With a split open, Ctrl-l too: the outline sits left of the main
+      // pane, so moving right lands there, not on the pane beyond it.
+      // Without one, Ctrl-l stays Chrome's (or a scroll alias's).
+      const ctrlL =
+        e.ctrlKey && !e.shiftKey && !e.altKey && key.toLowerCase() === "l" &&
+        this.ref.isOpen && !this.matchesScrollAlias(e);
       if (
         key === "Escape" ||
-        (e.ctrlKey && !e.shiftKey && !e.altKey && key.toLowerCase() === "h")
+        (e.ctrlKey && !e.shiftKey && !e.altKey && key.toLowerCase() === "h") ||
+        ctrlL
       ) {
         e.preventDefault();
         clearOutlineFocus();
@@ -440,6 +500,10 @@ export class VimController {
         // "refocus" option means: skip the toggle, take back the focus.
         if (key === "o" && !e.ctrlKey && !e.shiftKey && !e.altKey && !e.metaKey) {
           e.preventDefault();
+          // The outline drives the main pane; from the reference pane, go
+          // there first (which ends this caret) rather than reseed a caret
+          // in a pane the outline doesn't move.
+          if (this.pane === this.ref) this.focusPane("main");
           const refocus =
             this.viewer.settings.outlineOBehavior === "refocus" &&
             isSidebarOpen() &&
@@ -704,6 +768,12 @@ export class VimController {
         return;
       }
 
+      case ":":
+        e.preventDefault();
+        this.mode = "command";
+        this.cmdline.open();
+        return;
+
       case "?":
         e.preventDefault();
         this.toggleHelp();
@@ -784,14 +854,8 @@ export class VimController {
       case "j":
       case "k":
       case "l": {
-        // The reference pane sits right of (vsplit) or below (split) the
-        // main one; a direction with no pane that way does nothing.
-        const dir = this.ref.splitDirection;
-        const toward =
-          dir === "vertical" ? { h: "main", l: "ref" }[k as "h" | "l"]
-          : dir === "horizontal" ? { k: "main", j: "ref" }[k as "j" | "k"]
-          : undefined;
-        if (toward) this.focusPane(toward as "main" | "ref");
+        const toward = this.paneToward(k);
+        if (toward) this.focusPane(toward);
         return;
       }
       case "c":
@@ -815,8 +879,52 @@ export class VimController {
     }
   }
 
+  /**
+   * Run an Ex command from the `:` line. Only the window commands and a
+   * page jump — enough for `:q` muscle memory, not an Ex implementation.
+   * Abbreviations follow Vim's (`:clo`, `:on`, `:vs`, `:sp`).
+   */
+  private runCommand(cmd: string): void {
+    // `:12` — go to page 12 in the focused pane, like 12G.
+    if (/^\d+$/.test(cmd)) {
+      this.pane.goToPage(parseInt(cmd, 10));
+      return;
+    }
+    // Vim ignores a trailing `!` on these; nothing here has unsaved state.
+    const name = cmd.replace(/!$/, "");
+    const winCmd = ((): string | null => {
+      if (/^(q(u(it?)?)?|wq|x(it?)?|exi(t)?|clo(se?)?)$/.test(name)) return "q";
+      if (/^on(ly?)?$/.test(name)) return "o";
+      if (/^vs(p(l(it?)?)?)?$/.test(name)) return "v";
+      if (/^sp(l(it?)?)?$/.test(name)) return "s";
+      return null;
+    })();
+    if (winCmd) {
+      this.windowCommand(winCmd);
+      return;
+    }
+    this.flashStatus(`Not an editor command: ${cmd}`);
+  }
+
+  /** The pane in direction h/j/k/l, if there is one. The reference pane sits
+   *  right of (vsplit) or below (split) the main one. */
+  private paneToward(k: string): "main" | "ref" | undefined {
+    const dir = this.ref.splitDirection;
+    if (dir === "vertical") return { h: "main", l: "ref" }[k] as "main" | "ref" | undefined;
+    if (dir === "horizontal") return { k: "main", j: "ref" }[k] as "main" | "ref" | undefined;
+    return undefined;
+  }
+
+  private matchesScrollAlias(e: KeyboardEvent): boolean {
+    const s = this.viewer.settings;
+    return [s.halfPageDownKey, s.halfPageUpKey, s.fullPageDownKey, s.fullPageUpKey]
+      .some((alias) => matchesAlias(e, alias));
+  }
+
   private openSplit(direction: SplitDirection): void {
     if (!this.viewer.pdfDocument) return;
+    // A new split starts with no history; one re-laid-out keeps it.
+    if (!this.ref.isOpen) this.jumpLists.delete(this.ref);
     // Lays the split out synchronously, so the pane can take focus now.
     void this.ref.open(direction);
     this.focusPane("ref");
@@ -824,9 +932,11 @@ export class VimController {
 
   private focusPane(which: "main" | "ref"): void {
     const toRef = which === "ref" && this.ref.isOpen;
-    // Caret mode lives on the main pane's text layer; leaving it active
-    // would keep j/k moving an invisible caret instead of scrolling.
-    if (toRef && this.caretMode.isActive) this.caretMode.exit();
+    // The caret's span indices belong to the pane it was placed in; carried
+    // across, j/k would steer a caret the user can no longer see.
+    // Compared with the pane in effect, not refFocused: a split closed under
+    // us (Viewer.load on a dropped file) leaves refFocused stale.
+    if (toRef !== (this.pane === this.ref) && this.caretMode.isActive) this.caretMode.exit();
     // Likewise the outline: with its focus kept, j/k/Enter would steer the
     // outline rather than the pane that now shows focus.
     if (toRef) clearOutlineFocus();
@@ -856,7 +966,8 @@ export class VimController {
     if (this.caretMode.isActive) this.caretMode.exit();
     const anchor = this.ref.captureMarkAnchor();
     const scale = this.ref.shownScaleValue();
-    this.jumps.record(this.snapshot());
+    // The main pane is the one about to move, whichever pane has focus.
+    this.jumpsFor(this.viewer).record(this.snapshot(this.viewer));
     this.closeRef();
     this.viewer.pdfViewer.currentScaleValue = scale;
     if (anchor) this.viewer.restoreMarkAnchor(anchor);
@@ -872,7 +983,9 @@ export class VimController {
     const mainScale = this.viewer.shownScaleValue();
     const refScale = this.ref.shownScaleValue();
     if (!mainAnchor || !refAnchor) return;
-    this.jumps.record(this.snapshot());
+    // Both panes move, so each gets a way back.
+    this.jumpsFor(this.viewer).record(this.snapshot(this.viewer));
+    this.jumpsFor(this.ref).record(this.snapshot(this.ref));
     this.viewer.pdfViewer.currentScaleValue = refScale;
     this.ref.pdfViewer.currentScaleValue = mainScale;
     this.viewer.restoreMarkAnchor(refAnchor);
@@ -912,11 +1025,18 @@ export class VimController {
 
   private enterHint(newTab: boolean): void {
     const ok = this.hints.activate({
+      // Both panes of a split: each renders its own annotation layer, and a
+      // link followed there navigates that pane through its own linkService.
+      panes: this.ref.isOpen ? [this.viewer, this.ref] : [this.viewer],
       newTab,
       onExit: () => {
         this.mode = "normal";
       },
-      onBeforeFollow: (link) => {
+      onBeforeFollow: (link, pane) => {
+        const toRef = pane === this.ref;
+        // Keys after the jump should drive the pane that just moved.
+        if (toRef !== this.refFocused) this.focusPane(toRef ? "ref" : "main");
+        // Into the pane that moves, which focusPane just made this.pane.
         if (this.isInternalLink(link)) {
           this.jumps.record(this.snapshot());
         }
@@ -930,19 +1050,34 @@ export class VimController {
     this.mode = "hint";
   }
 
-  private snapshot(): JumpPos {
+  private jumpsFor(pane: Pane): JumpList {
+    let list = this.jumpLists.get(pane);
+    if (!list) {
+      list = new JumpList();
+      this.jumpLists.set(pane, list);
+    }
+    return list;
+  }
+
+  /** The focused pane's jump list. */
+  private get jumps(): JumpList {
+    return this.jumpsFor(this.pane);
+  }
+
+  private snapshot(pane: Pane = this.pane): JumpPos {
     return {
-      page: this.viewer.currentPage,
-      scrollTop: this.viewer.container.scrollTop,
-      scrollLeft: this.viewer.container.scrollLeft,
+      page: pane.currentPage,
+      scrollTop: pane.container.scrollTop,
+      scrollLeft: pane.container.scrollLeft,
     };
   }
 
   private restore(pos: JumpPos): void {
+    const pane = this.pane;
     // Ensure PDF.js has laid out the target page before we scroll.
-    this.viewer.goToPage(pos.page);
+    pane.goToPage(pos.page);
     requestAnimationFrame(() => {
-      this.viewer.container.scrollTo({
+      pane.container.scrollTo({
         top: pos.scrollTop,
         left: pos.scrollLeft,
         behavior: "auto",
@@ -1259,11 +1394,10 @@ function isMainPaneKey(e: KeyboardEvent): boolean {
     if (e.shiftKey) return false;
     const k = e.key.toLowerCase();
     // Ctrl-h only does something when there is an outline to focus.
-    if (k === "h") return isSidebarOpen() && hasOutlineItems();
-    return k === "o" || k === "i";
+    // Ctrl-h only does something when there is an outline to focus.
+    return k === "h" && isSidebarOpen() && hasOutlineItems();
   }
-  if (e.key === "Tab") return !e.shiftKey;
-  return ["i", "f", "F", "/", "n", "N", "o"].includes(e.key);
+  return ["/", "n", "N", "o"].includes(e.key);
 }
 
 function matchesAlias(e: KeyboardEvent, alias: string): boolean {
