@@ -1,5 +1,6 @@
 import type { PDFDocumentProxy } from "pdfjs-dist";
 import type { PDFLinkService } from "pdfjs-dist/web/pdf_viewer.mjs";
+import type { Pane } from "./pane";
 import type { Viewer } from "./viewer";
 
 // Estimated heading geometry in PDF points. We don't know an outline entry's
@@ -15,7 +16,10 @@ interface OutlineNode {
   items: OutlineNode[];
 }
 
-const activatorByRow = new WeakMap<HTMLElement, () => void>();
+// An activator jumps the given pane to its section, defaulting to the main
+// pane — the finder passes the focused one while the view is split.
+type Activator = (pane?: Pane) => void;
+const activatorByRow = new WeakMap<HTMLElement, Activator>();
 const childrenByRow = new WeakMap<HTMLElement, HTMLElement>();
 const parentByRow = new WeakMap<HTMLElement, HTMLElement>();
 
@@ -35,7 +39,7 @@ export interface OutlineSection {
   page: number | null;
   xPdf: number | null;
   yPdf: number | null;
-  activate: () => void;
+  activate: Activator;
 }
 
 export function getOutlineSections(): OutlineSection[] {
@@ -158,9 +162,9 @@ function renderList(
     // coords are (usually) populated and we can scroll-and-flash precisely.
     // If they're still null (cold click before resolution completes, or a
     // Fit/FitB dest without coords), fall back to the link service.
-    const activate = (): void => {
+    const activate = (pane: Pane = viewer): void => {
       if (meta.page !== null && meta.yPdf !== null) {
-        viewer.flashScrollToLine(
+        pane.flashScrollToLine(
           meta.page,
           meta.xPdf ?? 0,
           // `yPdf` from XYZ/FitH is the *top* of the destination region;
@@ -171,7 +175,7 @@ function renderList(
           SECTION_HEIGHT_PDF,
         );
       } else if (node.dest) {
-        linkService.goToDestination(
+        (pane === viewer ? linkService : pane.linkService).goToDestination(
           node.dest as Parameters<PDFLinkService["goToDestination"]>[0],
         );
       } else if (node.url) {
@@ -179,7 +183,7 @@ function renderList(
       }
     };
     activatorByRow.set(row, activate);
-    row.addEventListener("click", activate);
+    row.addEventListener("click", () => activate());
     frag.appendChild(row);
     if (node.items && node.items.length > 0) {
       row.classList.add("has-children");

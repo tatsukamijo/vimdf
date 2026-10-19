@@ -49,6 +49,7 @@
  */
 
 import type { Viewer } from "./viewer";
+import type { Pane } from "./pane";
 import type { Highlight, HighlightRect } from "./highlights";
 import { copyText } from "./clipboard";
 
@@ -129,7 +130,36 @@ export class CaretMode {
   private opSeq = 0;
   private flashRange: CaretRange | null = null;
 
-  constructor(private viewer: Viewer) {}
+  /**
+   * `getPane` returns the focused pane, which the caret lives on. Status,
+   * settings and highlights stay with the main viewer, which owns them for
+   * both panes. The controller exits caret mode on every pane switch, so
+   * a caret never outlives the pane its span indices point into.
+   */
+  constructor(
+    private viewer: Viewer,
+    private getPane: () => Pane,
+  ) {}
+
+  private get pane(): Pane {
+    return this.getPane();
+  }
+
+  // The pane the caret was placed in. The controller exits caret mode on a
+  // pane switch, but a split can also close underneath it (Viewer.load
+  // on a dropped file); a caret whose pane is gone must not be replayed
+  // against the other pane's spans.
+  private caretPane: Pane | null = null;
+  // Bumped only by exit(). opSeq also moves on in-mode changes (Esc out of
+  // visual), which must not cancel a G still waiting for its page.
+  private exitSeq = 0;
+
+  /** Exit if the focused pane is no longer the caret's. */
+  private lostPane(): boolean {
+    if (this.kind === "off" || this.caretPane === this.pane) return false;
+    this.exit();
+    return true;
+  }
 
   get isActive(): boolean {
     return this.kind !== "off";
@@ -167,12 +197,15 @@ export class CaretMode {
       return;
     }
     this.kind = "insert";
+    this.caretPane = this.pane;
     this.viewer.setModeLabel("-- CARET --");
     this.render();
   }
 
   exit(): void {
     this.kind = "off";
+    this.caretPane = null;
+    this.exitSeq++;
     this.anchor = null;
     this.clearPending();
     this.viewer.setModeLabel("");
@@ -251,6 +284,7 @@ export class CaretMode {
   }
 
   handleKey(e: KeyboardEvent): void {
+    if (this.lostPane()) return;
     const k = e.key;
 
     // A bare modifier press is still a keydown. Without this it falls all
@@ -468,8 +502,9 @@ export class CaretMode {
       // the anchor, and throwing away the selection is the difference
       // between a retry and a re-drag. (The "not focused" flavour of
       // failure clears as soon as the user clicks in, so retrying works.)
+      const seq = this.opSeq;
       void this.yankSelection(sel).then((r) => {
-        if (r !== "failed") this.toInsert();
+        if (r !== "failed" && seq === this.opSeq) this.toInsert();
       });
       return;
     }
@@ -478,8 +513,9 @@ export class CaretMode {
       // Neovim's default (Y == y$), not classic Vim's Y == yy. Documented in
       // the help table so nobody has to guess which one they got.
       if (sel) {
+        const seq = this.opSeq;
         void this.yankSelection({ ...sel, kind: "visual-line" }).then((r) => {
-          if (r !== "failed") this.toInsert();
+          if (r !== "failed" && seq === this.opSeq) this.toInsert();
         });
         return;
       }
@@ -493,7 +529,12 @@ export class CaretMode {
         this.armOperator("H", count);
         return;
       }
-      void this.highlightSelection(sel).then(() => this.toInsert());
+      // Not after an exit or pane switch meanwhile (exit bumps opSeq): that
+      // would turn caret mode back on for a caret nobody can see.
+      const seq = this.opSeq;
+      void this.highlightSelection(sel).then(() => {
+        if (seq === this.opSeq) this.toInsert();
+      });
       return;
     }
   }
@@ -922,6 +963,7 @@ export class CaretMode {
   }
 
   render(): void {
+    if (this.lostPane()) return;
     this.clearOverlays();
     if (this.kind === "off" || !this.caret) return;
 
@@ -1040,6 +1082,8 @@ export class CaretMode {
   }
 
   private clearOverlays(): void {
+    // Document-wide, not this.pane: closing a split can change which pane
+    // `pane` resolves to before the caret on the old one is cleared.
     document
       .querySelectorAll(".vim-caret, .vim-selection")
       .forEach((el) => el.remove());
@@ -1062,7 +1106,7 @@ export class CaretMode {
    *   2. Otherwise, pick the visible span closest to the viewport top.
    */
   private findStartCaret(): Caret | null {
-    const jump = this.viewer.resolveJumpDestClient();
+    const jump = this.pane.resolveJumpDestClient();
     if (jump) {
       if (this.isJumpDestCurrent(jump)) {
         const jumpSpans = this.getPageSpans(jump.pageIdx);
@@ -1072,7 +1116,7 @@ export class CaretMode {
             jump.clientX,
             jump.clientY,
           );
-          this.viewer.clearJumpDest();
+          this.pane.clearJumpDest();
           if (idx >= 0) {
             return { pageIdx: jump.pageIdx, spanIdx: idx, charOffset: 0 };
           }
@@ -1080,11 +1124,11 @@ export class CaretMode {
       } else {
         // Stale — drop it so subsequent `i` presses don't keep referencing
         // a destination the user has already scrolled away from.
-        this.viewer.clearJumpDest();
+        this.pane.clearJumpDest();
       }
     }
 
-    const pageIdx = this.viewer.currentPage - 1;
+    const pageIdx = this.pane.currentPage - 1;
     const spans = this.getPageSpans(pageIdx);
     if (spans.length === 0) return null;
 
@@ -1093,7 +1137,7 @@ export class CaretMode {
     // scrolled-into-place reading position. Y is weighted double so we
     // pick the right line first, then break ties with X to get a span
     // close to the horizontal center.
-    const cRect = this.viewer.container.getBoundingClientRect();
+    const cRect = this.pane.container.getBoundingClientRect();
     const targetX = (cRect.left + cRect.right) / 2;
     const targetY = (cRect.top + cRect.bottom) / 2;
     let bestIdx = -1;
@@ -1127,7 +1171,7 @@ export class CaretMode {
     clientX: number | null;
     clientY: number | null;
   }): boolean {
-    const cRect = this.viewer.container.getBoundingClientRect();
+    const cRect = this.pane.container.getBoundingClientRect();
     if (jump.clientY !== null) {
       const SLACK = 80;
       return (
@@ -1135,7 +1179,7 @@ export class CaretMode {
         jump.clientY <= cRect.bottom + SLACK
       );
     }
-    return Math.abs(this.viewer.currentPage - 1 - jump.pageIdx) <= 1;
+    return Math.abs(this.pane.currentPage - 1 - jump.pageIdx) <= 1;
   }
 
   private closestSpanTo(
@@ -1169,23 +1213,28 @@ export class CaretMode {
   private async gotoPageCaret(page: number): Promise<void> {
     const pageIdx = Math.min(
       Math.max(0, page - 1),
-      this.viewer.numPages - 1,
+      this.pane.numPages - 1,
     );
-    this.viewer.goToPage(pageIdx + 1);
+    this.pane.goToPage(pageIdx + 1);
+    const seq = this.exitSeq;
+    const pane = this.pane;
     const caret = await this.resolveCaret(() => {
       const spans = this.getPageSpans(pageIdx);
       if (spans.length === 0) return null;
       return { pageIdx, spanIdx: 0, charOffset: 0 };
     });
-    if (caret) {
+    // A pane switch or exit during the up-to-3s poll makes this stale.
+    if (caret && seq === this.exitSeq && pane === this.pane) {
       this.caret = caret;
       this.render();
     }
   }
 
   private async gotoLastCaret(): Promise<void> {
-    const lastPage = this.viewer.numPages - 1;
-    this.viewer.goToPage(lastPage + 1);
+    const lastPage = this.pane.numPages - 1;
+    this.pane.goToPage(lastPage + 1);
+    const seq = this.exitSeq;
+    const pane = this.pane;
     const caret = await this.resolveCaret(() => {
       const spans = this.getPageSpans(lastPage);
       if (spans.length === 0) return null;
@@ -1197,7 +1246,8 @@ export class CaretMode {
         charOffset: Math.max(0, len - 1),
       };
     });
-    if (caret) {
+    // A pane switch or exit during the up-to-3s poll makes this stale.
+    if (caret && seq === this.exitSeq && pane === this.pane) {
       this.caret = caret;
       this.render();
     }
@@ -1231,7 +1281,7 @@ export class CaretMode {
     if (c.spanIdx + 1 < spans.length) {
       return { pageIdx: c.pageIdx, spanIdx: c.spanIdx + 1, charOffset: 0 };
     }
-    if (c.pageIdx + 1 < this.viewer.numPages) {
+    if (c.pageIdx + 1 < this.pane.numPages) {
       this.ensurePageRendered(c.pageIdx + 1);
       const next = this.getPageSpans(c.pageIdx + 1);
       if (next.length > 0) {
@@ -1398,7 +1448,7 @@ export class CaretMode {
     }
 
     // 3) Adjacent page.
-    if (dir === 1 && c.pageIdx + 1 < this.viewer.numPages) {
+    if (dir === 1 && c.pageIdx + 1 < this.pane.numPages) {
       this.ensurePageRendered(c.pageIdx + 1);
       const next = this.getPageSpans(c.pageIdx + 1);
       if (next.length > 0) {
@@ -1487,7 +1537,7 @@ export class CaretMode {
     const span = this.spanAt(this.caret);
     if (!span) return;
     const r = this.charRect(span, this.caret.charOffset) ?? span.getBoundingClientRect();
-    const container = this.viewer.container;
+    const container = this.pane.container;
     const cRect = container.getBoundingClientRect();
     const caretY = r.top - cRect.top + container.scrollTop;
     let targetTop = caretY;
@@ -1498,8 +1548,8 @@ export class CaretMode {
   }
 
   private ensurePageRendered(pageIdx: number): void {
-    if (Math.abs(this.viewer.currentPage - (pageIdx + 1)) <= 1) return;
-    this.viewer.goToPage(pageIdx + 1);
+    if (Math.abs(this.pane.currentPage - (pageIdx + 1)) <= 1) return;
+    this.pane.goToPage(pageIdx + 1);
   }
 
   // --- Char rect helpers ---
@@ -1540,7 +1590,7 @@ export class CaretMode {
   // --- DOM accessors ---
 
   private pageElement(pageIdx: number): HTMLElement | null {
-    return document.querySelector(
+    return this.pane.viewerEl.querySelector(
       `.page[data-page-number="${pageIdx + 1}"]`,
     ) as HTMLElement | null;
   }

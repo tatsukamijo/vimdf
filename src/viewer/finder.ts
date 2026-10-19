@@ -7,6 +7,7 @@
  * plus the matching text snippet for the selected entry.
  */
 
+import type { Pane } from "./pane";
 import type { Viewer } from "./viewer";
 import type { MarkPosition, MarksStore } from "./marks";
 import type { Highlight } from "./highlights";
@@ -51,6 +52,8 @@ interface LineInfo {
 
 export interface FinderDeps {
   recordJump: () => void;
+  /** Where a chosen result opens: the focused pane while split. */
+  getPane: () => Pane;
   getHighlights: () => ReadonlyArray<Highlight>;
   onClose: () => void;
 }
@@ -295,7 +298,7 @@ export class Finder {
         label: s.title,
         page: s.page ?? 0,
         score: 0,
-        activate: s.activate,
+        activate: () => s.activate(this.deps.getPane()),
       });
     }
 
@@ -312,7 +315,7 @@ export class Finder {
         label: `'${name}`,
         page: pos.page,
         score: 0,
-        activate: () => this.viewer.restoreMarkAnchor(pos),
+        activate: () => this.deps.getPane().restoreMarkAnchor(pos),
       });
     }
 
@@ -325,7 +328,7 @@ export class Finder {
         label: `highlight on page ${page}`,
         page,
         score: 0,
-        activate: () => this.viewer.goToPage(page),
+        activate: () => this.deps.getPane().goToPage(page),
       });
     }
 
@@ -355,7 +358,7 @@ export class Finder {
           page: pageNumber,
           score: 0,
           activate: () =>
-            this.viewer.flashScrollToLine(
+            this.deps.getPane().flashScrollToLine(
               pageNumber,
               line.xStart,
               line.yBaseline,
@@ -602,7 +605,7 @@ export class Finder {
             score: hit.match.score,
             matchIdx: snip.positions,
             activate: () =>
-              this.viewer.flashScrollToLine(
+              this.deps.getPane().flashScrollToLine(
                 hit.page,
                 line.xStart,
                 line.yBaseline,

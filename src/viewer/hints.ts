@@ -2,19 +2,20 @@
  * Vimium-style link hint mode for PDF.js annotation links.
  *
  * On activation:
- *  - Collects all `<a>` elements rendered inside the viewer that intersect
- *    the visible viewport.
+ *  - Collects all `<a>` elements rendered inside each given pane that
+ *    intersect that pane's visible viewport — both panes of a split.
  *  - Generates prefix-free labels using a configurable character set.
  *  - Renders badge overlays at each link's top-left corner.
  *  - Intercepts keystrokes until a unique match fires, or the user bails.
  */
 
-import type { Viewer } from "./viewer";
+import type { Pane } from "./pane";
 
 const HINT_CHARS = "sadfjkleincmpgh";
 
 interface Hint {
   link: HTMLAnchorElement;
+  pane: Pane;
   label: string;
   overlay: HTMLElement;
 }
@@ -25,9 +26,9 @@ export class HintController {
   private active = false;
   private openInNewTab = false;
   private onExit: (() => void) | null = null;
-  private onBeforeFollow: ((link: HTMLAnchorElement) => void) | null = null;
-
-  constructor(private viewer: Viewer) {}
+  private onBeforeFollow:
+    | ((link: HTMLAnchorElement, pane: Pane) => void)
+    | null = null;
 
   isActive(): boolean {
     return this.active;
@@ -38,12 +39,13 @@ export class HintController {
    * visible; caller may want to show feedback in that case.
    */
   activate(opts: {
+    panes: Pane[];
     newTab?: boolean;
     onExit?: () => void;
-    onBeforeFollow?: (link: HTMLAnchorElement) => void;
-  } = {}): boolean {
+    onBeforeFollow?: (link: HTMLAnchorElement, pane: Pane) => void;
+  }): boolean {
     this.deactivate();
-    const links = this.collectVisibleLinks();
+    const links = this.collectVisibleLinks(opts.panes);
     if (links.length === 0) return false;
 
     const labels = generateLabels(links.length, HINT_CHARS);
@@ -51,16 +53,19 @@ export class HintController {
     layer.id = "hintLayer";
 
     for (let i = 0; i < links.length; i++) {
-      const link = links[i];
+      const { link, pane } = links[i];
       const label = labels[i];
       const rect = link.getBoundingClientRect();
+      // Clamp to the link's own pane: a link half scrolled out of one pane
+      // would otherwise get its badge drawn over the other.
+      const bounds = pane.container.getBoundingClientRect();
       const overlay = document.createElement("span");
       overlay.className = "hint";
       overlay.textContent = label;
-      overlay.style.top = `${Math.max(0, rect.top - 2)}px`;
-      overlay.style.left = `${Math.max(0, rect.left - 2)}px`;
+      overlay.style.top = `${Math.max(bounds.top, rect.top - 2)}px`;
+      overlay.style.left = `${Math.max(bounds.left, rect.left - 2)}px`;
       layer.appendChild(overlay);
-      this.hints.push({ link, label, overlay });
+      this.hints.push({ link, pane, label, overlay });
     }
 
     document.body.appendChild(layer);
@@ -102,11 +107,11 @@ export class HintController {
       return;
     }
     if (matches.length === 1 && matches[0].label === this.typed) {
-      const link = matches[0].link;
+      const { link, pane } = matches[0];
       const newTab = this.openInNewTab || e.shiftKey;
       const onBefore = this.onBeforeFollow;
       this.deactivate();
-      if (!newTab && onBefore) onBefore(link);
+      if (!newTab && onBefore) onBefore(link, pane);
       this.follow(link, newTab);
       return;
     }
@@ -139,32 +144,36 @@ export class HintController {
     }
   }
 
-  private collectVisibleLinks(): HTMLAnchorElement[] {
-    const containerRect = this.viewer.container.getBoundingClientRect();
-    const all =
-      this.viewer.viewerEl.querySelectorAll<HTMLAnchorElement>("a[href]");
-    const visible: HTMLAnchorElement[] = [];
-    for (const a of all) {
-      const r = a.getBoundingClientRect();
-      if (r.width < 1 || r.height < 1) continue;
-      if (
-        r.bottom <= containerRect.top ||
-        r.top >= containerRect.bottom ||
-        r.right <= containerRect.left ||
-        r.left >= containerRect.right
-      ) {
-        continue;
+  private collectVisibleLinks(
+    panes: Pane[],
+  ): { link: HTMLAnchorElement; pane: Pane }[] {
+    const visible: { link: HTMLAnchorElement; pane: Pane; rect: DOMRect }[] = [];
+    for (const pane of panes) {
+      // Clip to each pane's own container: a link scrolled out of one pane
+      // can still sit inside the other pane's screen area.
+      const containerRect = pane.container.getBoundingClientRect();
+      const all = pane.viewerEl.querySelectorAll<HTMLAnchorElement>("a[href]");
+      for (const a of all) {
+        const r = a.getBoundingClientRect();
+        if (r.width < 1 || r.height < 1) continue;
+        if (
+          r.bottom <= containerRect.top ||
+          r.top >= containerRect.bottom ||
+          r.right <= containerRect.left ||
+          r.left >= containerRect.right
+        ) {
+          continue;
+        }
+        visible.push({ link: a, pane, rect: r });
       }
-      visible.push(a);
     }
-    // Top-to-bottom, left-to-right.
+    // Top-to-bottom, left-to-right — on screen, so the two panes interleave
+    // the way they look rather than one pane's labels all coming first.
     visible.sort((a, b) => {
-      const ra = a.getBoundingClientRect();
-      const rb = b.getBoundingClientRect();
-      if (Math.abs(ra.top - rb.top) > 5) return ra.top - rb.top;
-      return ra.left - rb.left;
+      if (Math.abs(a.rect.top - b.rect.top) > 5) return a.rect.top - b.rect.top;
+      return a.rect.left - b.rect.left;
     });
-    return visible;
+    return visible.map(({ link, pane }) => ({ link, pane }));
   }
 
   private follow(link: HTMLAnchorElement, newTab: boolean): void {

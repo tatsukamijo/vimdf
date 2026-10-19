@@ -11,6 +11,11 @@
       <div id="viewer" class="pdfViewer"></div>
     </div>
 
+    <!-- Second view onto the same document, shown by Ctrl-w v / Ctrl-w s. -->
+    <div id="refContainer" tabindex="0" hidden>
+      <div id="refViewer" class="pdfViewer"></div>
+    </div>
+
     <aside id="sidebar" hidden>
       <header>Outline</header>
       <div id="outlineTree"></div>
@@ -32,6 +37,11 @@
         spellcheck="false"
       />
       <span id="searchStatus"></span>
+    </div>
+
+    <div id="cmdline" hidden>
+      <span id="cmdPrompt">:</span>
+      <input type="text" id="cmdInput" autocomplete="off" spellcheck="false" />
     </div>
 
     <div id="help" hidden>
@@ -63,6 +73,21 @@
           <tr><td>g0 / g$</td><td>First / last tab</td></tr>
           <tr><td>t</td><td>New tab</td></tr>
           <tr><td>x</td><td>Close current tab</td></tr>
+
+          <tr><th colspan="2">Split view</th></tr>
+          <tr><td>Ctrl-w v / Ctrl-w s</td><td>Split side by side / stacked, starting at the current view</td></tr>
+          <tr><td>Ctrl-w w / Ctrl-w h j k l</td><td>Switch pane / move to the pane in that direction</td></tr>
+          <tr><td>Ctrl-h j k l</td><td>Move to the pane in that direction (no Ctrl-w needed)</td></tr>
+          <tr><td>Ctrl-w c / Ctrl-w o</td><td>Close this pane / keep only this pane</td></tr>
+          <tr><td>Ctrl-w x</td><td>Swap the two panes' views</td></tr>
+          <tr><td>W (instead of Ctrl-w)</td><td>Same commands, for Windows / Linux, where Chrome keeps Ctrl-W</td></tr>
+          <tr><td>(second pane)</td><td>Scroll, zoom, gg/G, marks and T (finder) act on the focused pane; f / F, i (caret mode) and Ctrl-O / Ctrl-I (each pane has its own jump list) work in either pane; / and o return to the main one</td></tr>
+
+          <tr><th colspan="2">Command line</th></tr>
+          <tr><td>:</td><td>Open the command line (Up / Down for history, Esc to cancel)</td></tr>
+          <tr><td>:q / :wq / :x / :close</td><td>Close this pane (same as Ctrl-w q)</td></tr>
+          <tr><td>:only / :vsp / :sp</td><td>Keep only this pane / split side by side / stacked</td></tr>
+          <tr><td>:{n}</td><td>Go to page n</td></tr>
 
           <tr><th colspan="2">Search</th></tr>
           <tr><td>/</td><td>Search</td></tr>
