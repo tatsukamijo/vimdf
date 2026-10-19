@@ -5,6 +5,28 @@ All notable changes to VimDF will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.7.0] - 2026-10-18
+
+### Added
+- **Split view.** `Ctrl-w v` opens a second view of the same PDF side by
+  side, `Ctrl-w s` stacks it — for keeping a figure, table or equation in
+  sight while reading elsewhere. The new pane starts at the current view
+  and shares the open document, so it costs rendering only
+  - Move between panes with `Ctrl-w w` / `Ctrl-w h j k l`, or just
+    `Ctrl-h j k l` (vim-tmux-navigator style). `Ctrl-w c` / `Ctrl-w o`
+    close this pane / keep only this one, `Ctrl-w x` swaps the two views.
+    `W` stands in for `Ctrl-w` on Windows / Linux, where Chrome keeps it
+  - Scroll, zoom, `gg` / `G`, marks, the finder, caret mode (`i`, visual,
+    `y` / `H`) and `Ctrl-O` / `Ctrl-I` act on the focused pane. Each pane
+    keeps its own jump list, as Vim does per window. Search and the
+    outline stay with the main pane
+  - `f` / `F` hint links in both panes; following one moves focus to the
+    pane that jumped
+- **`:` command line.** `:q` / `:wq` / `:x` / `:close` close the pane,
+  `:only` keeps just this one, `:vsp` / `:sp` split, `:{n}` goes to page n.
+  Vim's abbreviations work (`:clo`, `:on`, `:vs`), `Up` / `Down` recall
+  earlier commands, and full-width IME input is folded to ASCII
+
 ## [0.6.2] - 2026-10-18
 
 ### Added
