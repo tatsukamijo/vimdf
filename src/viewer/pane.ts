@@ -105,18 +105,7 @@ export abstract class Pane {
         this.recordJumpDest(params.pageNumber, params.destArray as unknown[]);
       }
       const ret = origSPIV(params);
-      const pageIdx = (params?.pageNumber ?? 0) - 1;
-      const pv = (this.pdfViewer as unknown as {
-        _pages?: Array<{ div?: HTMLElement }>;
-      })._pages?.[pageIdx];
-      const div = pv?.div;
-      if (div) {
-        const r = div.getBoundingClientRect();
-        const cr = this.container.getBoundingClientRect();
-        if (Math.abs(r.top - cr.top) > 4) {
-          this.container.scrollTop += r.top - cr.top;
-        }
-      }
+      this.alignPageTop((params?.pageNumber ?? 0) - 1);
       // User-initiated link jump (citation click, outline fallback,
       // link-hint): flash the destination and center it in the viewport.
       // Skip zoom-restoration — PDF.js calls us synthetically during zoom
@@ -263,6 +252,25 @@ export abstract class Pane {
   goToPage(page: number): void {
     const clamped = Math.max(1, Math.min(this.numPages, page));
     this.pdfViewer.currentPageNumber = clamped;
+    // The setter scrolls through pdf.js's internal scrollIntoView, which
+    // misses once the page is zoomed wider than the pane: #viewer then
+    // overflows sideways, so the walk stops there and scrolls #viewer
+    // instead of the container. gg / G did nothing on a zoomed-in pane.
+    this.alignPageTop(clamped - 1);
+  }
+
+  /** Scroll the container so page `pageIdx`'s top meets its top edge. */
+  private alignPageTop(pageIdx: number): void {
+    const pv = (this.pdfViewer as unknown as {
+      _pages?: Array<{ div?: HTMLElement }>;
+    })._pages?.[pageIdx];
+    const div = pv?.div;
+    if (!div) return;
+    const r = div.getBoundingClientRect();
+    const cr = this.container.getBoundingClientRect();
+    if (Math.abs(r.top - cr.top) > 4) {
+      this.container.scrollTop += r.top - cr.top;
+    }
   }
 
   /**
